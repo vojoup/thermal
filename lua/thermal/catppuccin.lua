@@ -131,6 +131,19 @@ function M.setup(name, opts)
       comments = { "italic" },
       conditionals = {},
     },
+    -- catppuccin defaults diagnostic underlines to a flat "underline"; the set
+    -- reads as a curl. Set every severity so Error/Hint/Ok match the Warn/Info
+    -- we already recolour in M.patches. Needs a terminal + tmux that pass
+    -- undercurl through (Smulx/Setulc) -- see tmux/README.md.
+    lsp_styles = {
+      underlines = {
+        errors = { "undercurl" },
+        warnings = { "undercurl" },
+        information = { "undercurl" },
+        hints = { "undercurl" },
+        ok = { "undercurl" },
+      },
+    },
   }, opts or {}))
 end
 
