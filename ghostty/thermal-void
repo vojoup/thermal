@@ -1,0 +1,25 @@
+# thermal-void -- generated, see github.com/vojoup/thermal
+
+palette = 0=#24242B
+palette = 1=#E2564F
+palette = 2=#7FA88C
+palette = 3=#F6A83F
+palette = 4=#6A8CAF
+palette = 5=#D0568E
+palette = 6=#74AAA6
+palette = 7=#C2C2CB
+palette = 8=#666671
+palette = 9=#F06A5E
+palette = 10=#93BC9E
+palette = 11=#F2CE6E
+palette = 12=#85A6C8
+palette = 13=#DE79A6
+palette = 14=#92C6C2
+palette = 15=#FBF3E8
+
+background = #08080A
+foreground = #C2C2CB
+cursor-color = #F6A83F
+cursor-text = #08080A
+selection-background = #24242B
+selection-foreground = #E7E7EE
