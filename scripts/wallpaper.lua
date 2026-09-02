@@ -127,9 +127,26 @@ end
 local function clamp01(v) return v < 0 and 0 or (v > 1 and 1 or v) end
 local function smooth(t) t = clamp01(t); return t * t * (3 - 2 * t) end
 
-local function blend(bg, fg, a)
-  local v = bg + (fg - bg) * a
-  return math.floor((v < 0 and 0 or (v > 255 and 255 or v)) + 0.5)
+local function mixf(a, b, t) return a + (b - a) * t end
+
+-- Ordered (Bayer 8x8) dithering. The palette's dark ranges span only a handful
+-- of 8-bit levels, so smooth gradients posterise into visible bands; a threshold
+-- dither at quantise time scatters the rounding and the bands disappear, with no
+-- visible noise. q() turns a float channel + pixel position into a byte.
+local bayer = {
+  0, 32, 8, 40, 2, 34, 10, 42,
+  48, 16, 56, 24, 50, 18, 58, 26,
+  12, 44, 4, 36, 14, 46, 6, 38,
+  60, 28, 52, 20, 62, 30, 54, 22,
+  3, 35, 11, 43, 1, 33, 9, 41,
+  51, 19, 59, 27, 49, 17, 57, 25,
+  15, 47, 7, 39, 13, 45, 5, 37,
+  63, 31, 55, 23, 61, 29, 53, 21,
+}
+local function q(v, x, y)
+  if v < 0 then v = 0 elseif v > 255 then v = 255 end
+  local r = math.floor(v + (bayer[((y - 1) % 8) * 8 + ((x - 1) % 8) + 1] + 0.5) / 64)
+  return r > 255 and 255 or r
 end
 
 ------------------------------------------------------------------ motifs -----
@@ -181,7 +198,7 @@ local function motif_line(p)
         local a = av * edge[x]
         local h = heat[x]
         t[x] = string.char(
-          blend(br, h[1], a), blend(bg, h[2], a), blend(bb, h[3], a))
+          q(mixf(br, h[1], a), x, y), q(mixf(bg, h[2], a), x, y), q(mixf(bb, h[3], a), x, y))
       end
       rows[y] = "\0" .. table.concat(t)
     else
@@ -191,11 +208,175 @@ local function motif_line(p)
   return table.concat(rows)
 end
 
+--- Heat cubes: one square per step of the ramp, left to right coldest to
+--- hottest, in a single centred row on smoke. Each cube is its OWN gradient,
+--- running that colour's tonal range -- a light tint (top-left) down to a dark
+--- shade (bottom-right) of the same hue, passing through the base in the middle.
+--- A thin border in the split colour defines each cube against the smoke.
+local function motif_cubes(p)
+  local br, bg_, bb = hex2rgb(p.bg)
+  local smoke = string.char(br, bg_, bb)
+  local bdr = { hex2rgb(p.bg_dark) } -- dark end of each cube's range
+  local whi = { hex2rgb(p.whitehot) } -- light end
+  local brd = { hex2rgb(p.border) }
+  local border = string.char(brd[1], brd[2], brd[3])
+
+  local function mix(a, b, t)
+    return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t }
+  end
+
+  -- each cube's light (hi) and dark (lo) ends, in-hue
+  local stops = {}
+  for _, key in ipairs(palette.ramp) do stops[#stops + 1] = { hex2rgb(p[key]) } end
+  local n = #stops
+  local hi, lo = {}, {}
+  for i = 1, n do
+    hi[i] = mix(stops[i], whi, 0.50)
+    lo[i] = mix(stops[i], bdr, 0.62)
+  end
+
+  -- layout: a centred row of n squares with gaps, 9% side margins
+  local budget = W - 2 * (W * 0.09)
+  local cube = math.floor(budget / (n + 0.4 * (n - 1)))
+  local gap = math.floor(0.4 * cube)
+  local period = cube + gap
+  local start_x = math.floor((W - (n * cube + (n - 1) * gap)) / 2)
+  local cy0 = math.floor((H - cube) / 2)
+  local bt = math.max(2, math.floor(cube * 0.02)) -- border thickness
+
+  -- per-column lookup: which cube (0 = smoke), fraction across it, edge flag
+  local col, fx, xedge = {}, {}, {}
+  for x = 1, W do
+    local xx = (x - 1) - start_x
+    col[x] = 0
+    if xx >= 0 then
+      local w = xx % period
+      local idx = math.floor(xx / period) + 1
+      if w < cube and idx <= n then
+        col[x] = idx
+        fx[x] = cube > 1 and w / (cube - 1) or 0
+        xedge[x] = w < bt or w >= cube - bt
+      end
+    end
+  end
+
+  local flat = "\0" .. string.rep(smoke, W)
+  local rows = {}
+  for y = 1, H do
+    local yy = (y - 1) - cy0
+    if yy >= 0 and yy < cube then
+      local fy = cube > 1 and yy / (cube - 1) or 0
+      local yedge = yy < bt or yy >= cube - bt
+      local t = {}
+      for x = 1, W do
+        local c = col[x]
+        if c == 0 then
+          t[x] = smoke
+        elseif yedge or xedge[x] then
+          t[x] = border
+        else
+          local tt = (fx[x] + fy) / 2
+          local h, l = hi[c], lo[c]
+          t[x] = string.char(
+            q(mixf(h[1], l[1], tt), x, y), q(mixf(h[2], l[2], tt), x, y), q(mixf(h[3], l[3], tt), x, y))
+        end
+      end
+      rows[y] = "\0" .. table.concat(t)
+    else
+      rows[y] = flat
+    end
+  end
+  return table.concat(rows)
+end
+
+--- Horizon glow: the heat ramp as a broad, soft band low on the screen, like a
+--- thermal horizon rising into smoke. Same per-column heat as the line, but a
+--- wide vertical falloff and no hard core.
+local function motif_glow(p)
+  local br, bg_, bb = hex2rgb(p.bg)
+  local smoke = string.char(br, bg_, bb)
+
+  local stops = {}
+  for _, key in ipairs(palette.ramp) do stops[#stops + 1] = { hex2rgb(p[key]) } end
+  local m = #stops
+  local heat = {}
+  for x = 1, W do
+    local t = (x - 1) / (W - 1) * (m - 1) + 1
+    local i = math.floor(t)
+    local f = t - i
+    local a, b = stops[i], stops[math.min(i + 1, m)]
+    heat[x] = { a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f }
+  end
+
+  local fade = W * 0.08
+  local edge = {}
+  for x = 1, W do edge[x] = smooth(math.min((x - 1) / fade, (W - x) / fade, 1)) end
+
+  local horizon = math.floor(H * 0.75 + 0.5)
+  local sigma = math.max(10, math.floor(H * 0.11 + 0.5))
+  local half = 3 * sigma
+  local peak = 0.92
+
+  local flat = "\0" .. string.rep(smoke, W)
+  local rows = {}
+  for y = 1, H do
+    local dy = y - horizon
+    if dy >= -half and dy <= half then
+      local av = peak * math.exp(-(dy * dy) / (2 * sigma * sigma))
+      local t = {}
+      for x = 1, W do
+        local a = av * edge[x]
+        local h = heat[x]
+        t[x] = string.char(q(mixf(br, h[1], a), x, y), q(mixf(bg_, h[2], a), x, y), q(mixf(bb, h[3], a), x, y))
+      end
+      rows[y] = "\0" .. table.concat(t)
+    else
+      rows[y] = flat
+    end
+  end
+  return table.concat(rows)
+end
+
+--- Flat smoke + vignette: near-solid flavour bg, darkening gently toward the
+--- corners. The quietest motif -- pure colour pairing, no heat.
+local function motif_vignette(p)
+  local br, bg_, bb = hex2rgb(p.bg)
+  local smoke = string.char(br, bg_, bb)
+  local dk = { br * 0.42, bg_ * 0.42, bb * 0.42 } -- corner target: ~60% to black
+  local inner = 0.30 -- inner radius fraction that stays pure bg
+
+  local cx, cy = (W - 1) / 2, (H - 1) / 2
+  local norm = math.sqrt(cx * cx + cy * cy)
+  local nx2 = {}
+  for x = 1, W do local dx = (x - 1) - cx; nx2[x] = dx * dx end
+
+  local rows = {}
+  for y = 1, H do
+    local dy = (y - 1) - cy
+    local dy2 = dy * dy
+    local t = {}
+    for x = 1, W do
+      local r = math.sqrt(nx2[x] + dy2) / norm
+      local v = smooth((r - inner) / (1 - inner))
+      if v <= 0 then
+        t[x] = smoke
+      else
+        t[x] = string.char(q(mixf(br, dk[1], v), x, y), q(mixf(bg_, dk[2], v), x, y), q(mixf(bb, dk[3], v), x, y))
+      end
+    end
+    rows[y] = "\0" .. table.concat(t)
+  end
+  return table.concat(rows)
+end
+
 local motifs = {
   line = motif_line,
+  cubes = motif_cubes,
+  glow = motif_glow,
+  vignette = motif_vignette,
 }
 -- Order also decides which motifs `make wallpaper` emits. Add names here.
-local motif_order = { "line" }
+local motif_order = { "line", "cubes", "glow", "vignette" }
 
 -------------------------------------------------------------------- write ----
 vim.fn.mkdir(root .. "/wallpaper", "p")

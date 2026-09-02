@@ -21,8 +21,17 @@ THERMAL_WP_WIDTH=5120 THERMAL_WP_HEIGHT=2880 make wallpaper
 Produces:
 
 - `wallpaper/thermal-smoky-line.png`
+- `wallpaper/thermal-smoky-cubes.png`
+- `wallpaper/thermal-smoky-glow.png`
+- `wallpaper/thermal-smoky-vignette.png`
 - `wallpaper/thermal-void-line.png`
+- `wallpaper/thermal-void-cubes.png`
+- `wallpaper/thermal-void-glow.png`
+- `wallpaper/thermal-void-vignette.png`
 - `wallpaper/thermal-ash-line.png`
+- `wallpaper/thermal-ash-cubes.png`
+- `wallpaper/thermal-ash-glow.png`
+- `wallpaper/thermal-ash-vignette.png`
 
 Set one (macOS): System Settings → Wallpaper → Add Photo, or
 
