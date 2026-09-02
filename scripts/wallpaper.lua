@@ -208,77 +208,112 @@ local function motif_line(p)
   return table.concat(rows)
 end
 
---- Heat cubes: one square per step of the ramp, left to right coldest to
---- hottest, in a single centred row on smoke. Each cube is its OWN gradient,
---- running that colour's tonal range -- a light tint (top-left) down to a dark
---- shade (bottom-right) of the same hue, passing through the base in the middle.
---- A thin border in the split colour defines each cube against the smoke.
+--- Keycaps: one glossy dark keycap per ramp step, a single centred row on
+--- smoke, echoing a line of caps from the Thermal set. Each cap is nearly
+--- black -- its hue only emerges from shadow -- with a soft specular shine up
+--- top, a lit front lip, darker sides, rounded anti-aliased edges and fine
+--- grain. The hotter the step, the more colour survives the shadow.
 local function motif_cubes(p)
   local br, bg_, bb = hex2rgb(p.bg)
   local smoke = string.char(br, bg_, bb)
-  local bdr = { hex2rgb(p.bg_dark) } -- dark end of each cube's range
-  local whi = { hex2rgb(p.whitehot) } -- light end
-  local brd = { hex2rgb(p.border) }
-  local border = string.char(brd[1], brd[2], brd[3])
+  local whi = { hex2rgb(p.whitehot) }
 
-  local function mix(a, b, t)
-    return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t }
-  end
-
-  -- each cube's light (hi) and dark (lo) ends, in-hue
+  -- per-cap tones: caps read almost black, so diffuse spans a DARK slice of the
+  -- hue (shadow -> lite); the specular reflection is a lighter, whiter tint.
   local stops = {}
   for _, key in ipairs(palette.ramp) do stops[#stops + 1] = { hex2rgb(p[key]) } end
   local n = #stops
-  local hi, lo = {}, {}
+  local shadow, lite, spec = {}, {}, {}
   for i = 1, n do
-    hi[i] = mix(stops[i], whi, 0.50)
-    lo[i] = mix(stops[i], bdr, 0.62)
+    local c = stops[i]
+    shadow[i] = { c[1] * 0.09, c[2] * 0.09, c[3] * 0.09 }
+    lite[i] = { c[1] * 0.34, c[2] * 0.34, c[3] * 0.34 }
+    spec[i] = { c[1] + (whi[1] - c[1]) * 0.40, c[2] + (whi[2] - c[2]) * 0.40, c[3] + (whi[3] - c[3]) * 0.40 }
   end
 
-  -- layout: a centred row of n squares with gaps, 9% side margins
+  -- layout: a centred row of n cells with gaps, 9% side margins
   local budget = W - 2 * (W * 0.09)
-  local cube = math.floor(budget / (n + 0.4 * (n - 1)))
-  local gap = math.floor(0.4 * cube)
-  local period = cube + gap
-  local start_x = math.floor((W - (n * cube + (n - 1) * gap)) / 2)
-  local cy0 = math.floor((H - cube) / 2)
-  local bt = math.max(2, math.floor(cube * 0.02)) -- border thickness
+  local cell = math.floor(budget / (n + 0.4 * (n - 1)))
+  local gap = math.floor(0.4 * cell)
+  local period = cell + gap
+  local start_x = math.floor((W - (n * cell + (n - 1) * gap)) / 2)
+  local cy0 = math.floor((H - cell) / 2)
 
-  -- per-column lookup: which cube (0 = smoke), fraction across it, edge flag
-  local col, fx, xedge = {}, {}, {}
+  -- keycap face inset within each cell, with rounded corners
+  local pad = math.floor(cell * 0.05)
+  local fw = cell - 2 * pad
+  local fh = cell - 2 * pad
+  local rr = fw * 0.14
+  local hw, hh = fw / 2, fh / 2
+
+  -- per-column: which cap (0 = none) and x within the face
+  local capidx, lpx = {}, {}
   for x = 1, W do
     local xx = (x - 1) - start_x
-    col[x] = 0
+    capidx[x] = 0
     if xx >= 0 then
       local w = xx % period
       local idx = math.floor(xx / period) + 1
-      if w < cube and idx <= n then
-        col[x] = idx
-        fx[x] = cube > 1 and w / (cube - 1) or 0
-        xedge[x] = w < bt or w >= cube - bt
+      if idx <= n and w < cell then
+        capidx[x] = idx
+        lpx[x] = w - pad
       end
     end
   end
+
+  math.randomseed(20240901) -- stable grain across runs
 
   local flat = "\0" .. string.rep(smoke, W)
   local rows = {}
   for y = 1, H do
     local yy = (y - 1) - cy0
-    if yy >= 0 and yy < cube then
-      local fy = cube > 1 and yy / (cube - 1) or 0
-      local yedge = yy < bt or yy >= cube - bt
+    if yy >= -1 and yy <= cell then
+      local fyp = yy - pad
       local t = {}
       for x = 1, W do
-        local c = col[x]
+        local c = capidx[x]
         if c == 0 then
           t[x] = smoke
-        elseif yedge or xedge[x] then
-          t[x] = border
         else
-          local tt = (fx[x] + fy) / 2
-          local h, l = hi[c], lo[c]
-          t[x] = string.char(
-            q(mixf(h[1], l[1], tt), x, y), q(mixf(h[2], l[2], tt), x, y), q(mixf(h[3], l[3], tt), x, y))
+          local px = lpx[x]
+          -- rounded-rect signed distance; cov gives ~1px anti-aliased edge
+          local qx = math.abs(px - hw) - (hw - rr)
+          local qy = math.abs(fyp - hh) - (hh - rr)
+          local mx = qx > 0 and qx or 0
+          local my = qy > 0 and qy or 0
+          local d = math.sqrt(mx * mx + my * my) + math.min(math.max(qx, qy), 0) - rr
+          local cov = 0.5 - d
+          if cov <= 0 then
+            t[x] = smoke
+          else
+            if cov > 1 then cov = 1 end
+            local u, v = px / fw, fyp / fh
+            if v < 0 then v = 0 elseif v > 1 then v = 1 end
+            -- diffuse: light from above, darker toward the bottom and the sides
+            local g = 0.25 + 0.45 * (1 - v)
+            g = g + 0.22 * math.exp(-((v - 0.93) ^ 2) / (2 * 0.025 * 0.025)) -- lit front lip
+            g = g * (1 - 0.30 * (2 * (u - 0.5)) ^ 2)                        -- side falloff
+            if g < 0 then g = 0 elseif g > 1 then g = 1 end
+            local sh, li = shadow[c], lite[c]
+            local cr = sh[1] + (li[1] - sh[1]) * g
+            local cg = sh[2] + (li[2] - sh[2]) * g
+            local cb = sh[3] + (li[3] - sh[3]) * g
+            -- specular shine: a soft reflection high on the face
+            local du, dv = (u - 0.5) / 0.34, (v - 0.26) / 0.16
+            local s = 0.42 * math.exp(-(du * du + dv * dv) / 2)
+            local sp = spec[c]
+            cr = cr + (sp[1] - cr) * s
+            cg = cg + (sp[2] - cg) * s
+            cb = cb + (sp[3] - cb) * s
+            -- luminance grain
+            local nz = (math.random() * 2 - 1) * 4
+            cr = cr + nz; cg = cg + nz; cb = cb + nz
+            -- composite over smoke by edge coverage
+            cr = br + (cr - br) * cov
+            cg = bg_ + (cg - bg_) * cov
+            cb = bb + (cb - bb) * cov
+            t[x] = string.char(q(cr, x, y), q(cg, x, y), q(cb, x, y))
+          end
         end
       end
       rows[y] = "\0" .. table.concat(t)
