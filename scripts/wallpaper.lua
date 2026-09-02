@@ -443,85 +443,106 @@ local function motif_vignette(p, _)
   return table.concat(rows)
 end
 
---- Flow: a grainy mesh gradient. Random colour anchors are scattered over the
---- frame and blended smoothly (inverse-distance weighting), full-bleed, with
---- heavy grain -- soft heat blobs bleeding into one another. The layout is
---- RANDOM each run; set THERMAL_WP_SEED to reproduce one. The heat ramp maps
---- straight onto the blue -> purple -> magenta -> ember -> amber -> white flow;
---- a few smoke anchors give the darker pools their depth.
-local function motif_flow(p, _)
-  flow_calls = flow_calls + 1
-  math.randomseed(base_seed * 8 + flow_calls)
+-- the smoke levels and legend greys, dark -> light, as an ordered ramp for the
+-- smoke flavour of the flow motif
+local SMOKE_RAMP = {
+  "bg_dark", "bg", "bg_alt", "bg_hl", "bg_sel",
+  "border", "gutter", "dim", "muted", "fg", "fg_hi",
+}
 
-  -- colour pool: the saturated ramp only (smoke would only mud the blend); a
-  -- dark, IN-HUE version of an anchor gives depth without turning grey.
-  local ramp = {}
-  for _, k in ipairs(palette.ramp) do ramp[#ramp + 1] = { hex2rgb(p[k]) } end
-  local nr = #ramp
+--- Flow: a grainy mesh gradient. Random colour anchors scattered over the frame
+--- and blended smoothly (inverse-distance weighting), full-bleed, with heavy
+--- grain -- soft blobs bleeding into one another. RANDOM each run; the seed is
+--- printed and in the filename, and THERMAL_WP_SEED reproduces it.
+---
+--- Two flavours of the same machine:
+---   "heat"  -- the saturated ramp, blue -> purple -> magenta -> amber -> white
+---   "smoke" -- the smoke levels and legend greys, with the occasional muted
+---              heat bloom bleeding through, for a dark, on-theme desktop
+local function make_flow(style)
+  return function(p, _)
+    flow_calls = flow_calls + 1
+    math.randomseed(base_seed * 8 + flow_calls)
 
-  -- anchors on a jittered grid so the frame stays evenly covered
-  local cols, rowsN = 4, 3
-  local ax, ay, ac, ainv = {}, {}, {}, {}
-  local k = 0
-  for gy = 0, rowsN - 1 do
-    for gx = 0, cols - 1 do
-      k = k + 1
-      ax[k] = (gx + 0.12 + 0.76 * math.random()) / cols * W
-      ay[k] = (gy + 0.12 + 0.76 * math.random()) / rowsN * H
-      local s = (0.18 + 0.16 * math.random()) * math.min(W, H)
-      ainv[k] = 1 / (s * s)
+    local keys = style == "smoke" and SMOKE_RAMP or palette.ramp
+    local ramp = {}
+    for _, k in ipairs(keys) do ramp[#ramp + 1] = { hex2rgb(p[k]) } end
+    local nr = #ramp
+    local heat = {} -- heat colours to bloom through the smoke flavour
+    if style == "smoke" then
+      for _, k in ipairs(palette.ramp) do heat[#heat + 1] = { hex2rgb(p[k]) } end
     end
-  end
-  local K = k
 
-  -- Colour the anchors in RAMP ORDER along a random axis, so neighbouring pools
-  -- are always ramp-adjacent hues. That is what keeps the blend saturated:
-  -- blue -> purple -> magenta stays clean, where blue + amber would mud to grey.
-  -- The axis, jitter and direction are random, so the flow still differs each run.
-  local ang = math.random() * 2 * math.pi
-  local dx, dy = math.cos(ang), math.sin(ang)
-  local order = {}
-  for i = 1, K do order[i] = i end
-  table.sort(order, function(a, b)
-    return ax[a] * dx + ay[a] * dy < ax[b] * dx + ay[b] * dy
-  end)
-  local rev = math.random() < 0.5
-  for rank = 1, K do
-    local i = order[rank]
-    local tt = (rank - 1) / (K - 1)
-    if rev then tt = 1 - tt end
-    local pos = 1 + tt * (nr - 1)
-    local i0 = math.floor(pos)
-    local f = pos - i0
-    local a, b = ramp[i0], ramp[math.min(i0 + 1, nr)]
-    local c = { a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f }
-    if math.random() < 0.30 then -- some pools sink into shadow, darkened in-hue
-      local d = 0.40 + 0.35 * math.random() -- multiplicative: keeps the hue, no grey
-      c = { c[1] * d, c[2] * d, c[3] * d }
-    end
-    ac[i] = c
-  end
-
-  local rows = {}
-  for y = 1, H do
-    local t = {}
-    for x = 1, W do
-      local sw, cr, cg, cb = 0, 0, 0, 0
-      for i = 1, K do
-        local dx = x - ax[i]
-        local dy = y - ay[i]
-        local w = 1 / (1 + (dx * dx + dy * dy) * ainv[i])
-        w = w * w -- sharpen: local anchors dominate, colours stay saturated
-        local c = ac[i]
-        sw = sw + w
-        cr = cr + w * c[1]; cg = cg + w * c[2]; cb = cb + w * c[3]
+    -- anchors on a jittered grid so the frame stays evenly covered
+    local cols, rowsN = 4, 3
+    local ax, ay, ac, ainv = {}, {}, {}, {}
+    local k = 0
+    for gy = 0, rowsN - 1 do
+      for gx = 0, cols - 1 do
+        k = k + 1
+        ax[k] = (gx + 0.12 + 0.76 * math.random()) / cols * W
+        ay[k] = (gy + 0.12 + 0.76 * math.random()) / rowsN * H
+        local s = (0.18 + 0.16 * math.random()) * math.min(W, H)
+        ainv[k] = 1 / (s * s)
       end
-      local gz = grain(x, y) * 3 -- heavier grain than the smoke field
-      t[x] = string.char(q(cr / sw + gz, x, y), q(cg / sw + gz, x, y), q(cb / sw + gz, x, y))
     end
-    rows[y] = "\0" .. table.concat(t)
+    local K = k
+
+    -- Colour the anchors in RAMP ORDER along a random axis, so neighbouring
+    -- pools are always ramp-adjacent -- that is what keeps the blend clean
+    -- (adjacent hues, not blue + amber mudding to grey). Axis/jitter/direction
+    -- are random, so the flow still differs each run.
+    local ang = math.random() * 2 * math.pi
+    local dx, dy = math.cos(ang), math.sin(ang)
+    local order = {}
+    for i = 1, K do order[i] = i end
+    table.sort(order, function(a, b)
+      return ax[a] * dx + ay[a] * dy < ax[b] * dx + ay[b] * dy
+    end)
+    local rev = math.random() < 0.5
+    for rank = 1, K do
+      local i = order[rank]
+      local tt = (rank - 1) / (K - 1)
+      if rev then tt = 1 - tt end
+      local pos = 1 + tt * (nr - 1)
+      local i0 = math.floor(pos)
+      local f = pos - i0
+      local a, b = ramp[i0], ramp[math.min(i0 + 1, nr)]
+      local c = { a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f }
+      if style == "smoke" then
+        if math.random() < 0.32 then -- a muted heat bloom rises through the smoke
+          local hc = heat[math.random(#heat)]
+          local m = 0.30 + 0.25 * math.random()
+          c = { c[1] + (hc[1] - c[1]) * m, c[2] + (hc[2] - c[2]) * m, c[3] + (hc[3] - c[3]) * m }
+        end
+      elseif math.random() < 0.30 then -- heat: some pools sink into shadow, in-hue
+        local d = 0.40 + 0.35 * math.random() -- multiplicative: keeps the hue, no grey
+        c = { c[1] * d, c[2] * d, c[3] * d }
+      end
+      ac[i] = c
+    end
+
+    local rows = {}
+    for y = 1, H do
+      local t = {}
+      for x = 1, W do
+        local sw, cr, cg, cb = 0, 0, 0, 0
+        for i = 1, K do
+          local ddx = x - ax[i]
+          local ddy = y - ay[i]
+          local w = 1 / (1 + (ddx * ddx + ddy * ddy) * ainv[i])
+          w = w * w -- sharpen: local anchors dominate, colours stay saturated
+          local c = ac[i]
+          sw = sw + w
+          cr = cr + w * c[1]; cg = cg + w * c[2]; cb = cb + w * c[3]
+        end
+        local gz = grain(x, y) * 3 -- heavier grain than the smoke field
+        t[x] = string.char(q(cr / sw + gz, x, y), q(cg / sw + gz, x, y), q(cb / sw + gz, x, y))
+      end
+      rows[y] = "\0" .. table.concat(t)
+    end
+    return table.concat(rows)
   end
-  return table.concat(rows)
 end
 
 local motifs = {
@@ -529,15 +550,16 @@ local motifs = {
   cubes = motif_cubes,
   glow = motif_glow,
   vignette = motif_vignette,
-  flow = motif_flow,
+  flow = make_flow("heat"),
+  ["flow-smoke"] = make_flow("smoke"),
 }
 -- Order also decides which motifs `make wallpaper` emits. Add names here.
-local motif_order = { "line", "cubes", "glow", "vignette", "flow" }
+local motif_order = { "line", "cubes", "glow", "vignette", "flow", "flow-smoke" }
 
--- flow carries its seed in the filename so a run you like is reproducible.
+-- flow flavours carry the seed in the filename so a run you like is reproducible.
 local function rel_name(flavour, motif)
-  if motif == "flow" then
-    return ("wallpaper/thermal-%s-flow-%d.png"):format(flavour, base_seed)
+  if motif:sub(1, 4) == "flow" then
+    return ("wallpaper/thermal-%s-%s-%d.png"):format(flavour, motif, base_seed)
   end
   return ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
 end
@@ -576,8 +598,8 @@ end
 local list = {}
 for _, flavour in ipairs(palette.order) do
   for _, motif in ipairs(motif_order) do
-    local nm = motif == "flow"
-      and ("wallpaper/thermal-%s-flow-<seed>.png"):format(flavour)
+    local nm = motif:sub(1, 4) == "flow"
+      and ("wallpaper/thermal-%s-%s-<seed>.png"):format(flavour, motif)
       or ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
     list[#list + 1] = ("- `%s`"):format(nm)
   end
@@ -596,6 +618,7 @@ local readme = table.concat({
   "- `glow` — a broad horizon glow low on the screen",
   "- `vignette` — near-solid smoke, darkening to the corners",
   "- `flow` — a grainy mesh gradient of heat colours (**randomised each run**)",
+  "- `flow-smoke` — the same, in smoke and legend greys with muted heat blooms",
   "",
   "The PNGs are large (4K, uncompressed) and **not committed**. Generate them:",
   "",

@@ -11,6 +11,7 @@ smoke (grained), and carry the heat where it means something. Motifs:
 - `glow` — a broad horizon glow low on the screen
 - `vignette` — near-solid smoke, darkening to the corners
 - `flow` — a grainy mesh gradient of heat colours (**randomised each run**)
+- `flow-smoke` — the same, in smoke and legend greys with muted heat blooms
 
 The PNGs are large (4K, uncompressed) and **not committed**. Generate them:
 
@@ -32,16 +33,19 @@ Produces:
 - `wallpaper/thermal-smoky-glow.png`
 - `wallpaper/thermal-smoky-vignette.png`
 - `wallpaper/thermal-smoky-flow-<seed>.png`
+- `wallpaper/thermal-smoky-flow-smoke-<seed>.png`
 - `wallpaper/thermal-void-line.png`
 - `wallpaper/thermal-void-cubes.png`
 - `wallpaper/thermal-void-glow.png`
 - `wallpaper/thermal-void-vignette.png`
 - `wallpaper/thermal-void-flow-<seed>.png`
+- `wallpaper/thermal-void-flow-smoke-<seed>.png`
 - `wallpaper/thermal-ash-line.png`
 - `wallpaper/thermal-ash-cubes.png`
 - `wallpaper/thermal-ash-glow.png`
 - `wallpaper/thermal-ash-vignette.png`
 - `wallpaper/thermal-ash-flow-<seed>.png`
+- `wallpaper/thermal-ash-flow-smoke-<seed>.png`
 
 Set one (macOS): System Settings → Wallpaper → Add Photo, or
 
