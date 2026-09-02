@@ -31,17 +31,17 @@ Produces:
 - `wallpaper/thermal-smoky-cubes.png`
 - `wallpaper/thermal-smoky-glow.png`
 - `wallpaper/thermal-smoky-vignette.png`
-- `wallpaper/thermal-smoky-flow.png`
+- `wallpaper/thermal-smoky-flow-<seed>.png`
 - `wallpaper/thermal-void-line.png`
 - `wallpaper/thermal-void-cubes.png`
 - `wallpaper/thermal-void-glow.png`
 - `wallpaper/thermal-void-vignette.png`
-- `wallpaper/thermal-void-flow.png`
+- `wallpaper/thermal-void-flow-<seed>.png`
 - `wallpaper/thermal-ash-line.png`
 - `wallpaper/thermal-ash-cubes.png`
 - `wallpaper/thermal-ash-glow.png`
 - `wallpaper/thermal-ash-vignette.png`
-- `wallpaper/thermal-ash-flow.png`
+- `wallpaper/thermal-ash-flow-<seed>.png`
 
 Set one (macOS): System Settings → Wallpaper → Add Photo, or
 

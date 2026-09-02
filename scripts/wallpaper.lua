@@ -26,8 +26,10 @@ local palette = dofile(root .. "/lua/thermal/palette.lua")
 local W = tonumber(os.getenv("THERMAL_WP_WIDTH")) or 3840
 local H = tonumber(os.getenv("THERMAL_WP_HEIGHT")) or 2160
 
--- The `flow` motif is randomised. Set THERMAL_WP_SEED to reproduce a run.
-local SEED = tonumber(os.getenv("THERMAL_WP_SEED"))
+-- The `flow` motif is randomised. Its seed is printed and baked into the flow
+-- filenames; set THERMAL_WP_SEED to reproduce a run. Kept to 6 digits so it
+-- stays short in a filename.
+local base_seed = tonumber(os.getenv("THERMAL_WP_SEED")) or (os.time() % 1000000)
 local flow_calls = 0
 
 -------------------------------------------------------------- PNG encoder ----
@@ -157,11 +159,11 @@ end
 -- and cap faces carry the visual noise of the real render. Same seed every run.
 local NOISE = 3.4 -- +/- amplitude on the smoke background
 local function grain(x, y)
-  local h = bit.tobit(x * 374761397 + y * 668265263)
-  h = bit.bxor(h, bit.rshift(h, 15))
-  h = bit.bxor(h, bit.lshift(h, 13))
-  h = bit.bxor(h, bit.rshift(h, 7))
-  return ((h % 8192) / 8192 - 0.5) * 2 * NOISE
+  -- hash the pixel to pseudo-random [0,1). The x*y cross term breaks the
+  -- diagonal structure a plain sin(ax+by) hash leaves, so it reads as grain,
+  -- not a woven pattern.
+  local s = math.sin(x * 12.9898 + y * 78.233 + x * y * 0.000131) * 43758.5453
+  return (s - math.floor(s) - 0.5) * 2 * NOISE
 end
 
 ------------------------------------------------------------------ motifs -----
@@ -449,14 +451,13 @@ end
 --- a few smoke anchors give the darker pools their depth.
 local function motif_flow(p, _)
   flow_calls = flow_calls + 1
-  math.randomseed((SEED or os.time()) * 8 + flow_calls)
+  math.randomseed(base_seed * 8 + flow_calls)
 
   -- colour pool: the saturated ramp only (smoke would only mud the blend); a
   -- dark, IN-HUE version of an anchor gives depth without turning grey.
   local ramp = {}
   for _, k in ipairs(palette.ramp) do ramp[#ramp + 1] = { hex2rgb(p[k]) } end
   local nr = #ramp
-  local br0, bg0, bb0 = hex2rgb(p.bg_dark)
 
   -- anchors on a jittered grid so the frame stays evenly covered
   local cols, rowsN = 4, 3
@@ -467,17 +468,39 @@ local function motif_flow(p, _)
       k = k + 1
       ax[k] = (gx + 0.12 + 0.76 * math.random()) / cols * W
       ay[k] = (gy + 0.12 + 0.76 * math.random()) / rowsN * H
-      local c = ramp[math.random(nr)]
-      if math.random() < 0.35 then -- ~a third of pools are deep, still in-hue
-        local d = 0.35 + 0.45 * math.random()
-        c = { br0 + (c[1] - br0) * d, bg0 + (c[2] - bg0) * d, bb0 + (c[3] - bb0) * d }
-      end
-      ac[k] = c
-      local s = (0.16 + 0.16 * math.random()) * math.min(W, H) -- tighter blobs
+      local s = (0.18 + 0.16 * math.random()) * math.min(W, H)
       ainv[k] = 1 / (s * s)
     end
   end
   local K = k
+
+  -- Colour the anchors in RAMP ORDER along a random axis, so neighbouring pools
+  -- are always ramp-adjacent hues. That is what keeps the blend saturated:
+  -- blue -> purple -> magenta stays clean, where blue + amber would mud to grey.
+  -- The axis, jitter and direction are random, so the flow still differs each run.
+  local ang = math.random() * 2 * math.pi
+  local dx, dy = math.cos(ang), math.sin(ang)
+  local order = {}
+  for i = 1, K do order[i] = i end
+  table.sort(order, function(a, b)
+    return ax[a] * dx + ay[a] * dy < ax[b] * dx + ay[b] * dy
+  end)
+  local rev = math.random() < 0.5
+  for rank = 1, K do
+    local i = order[rank]
+    local tt = (rank - 1) / (K - 1)
+    if rev then tt = 1 - tt end
+    local pos = 1 + tt * (nr - 1)
+    local i0 = math.floor(pos)
+    local f = pos - i0
+    local a, b = ramp[i0], ramp[math.min(i0 + 1, nr)]
+    local c = { a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f }
+    if math.random() < 0.30 then -- some pools sink into shadow, darkened in-hue
+      local d = 0.40 + 0.35 * math.random() -- multiplicative: keeps the hue, no grey
+      c = { c[1] * d, c[2] * d, c[3] * d }
+    end
+    ac[i] = c
+  end
 
   local rows = {}
   for y = 1, H do
@@ -511,6 +534,14 @@ local motifs = {
 -- Order also decides which motifs `make wallpaper` emits. Add names here.
 local motif_order = { "line", "cubes", "glow", "vignette", "flow" }
 
+-- flow carries its seed in the filename so a run you like is reproducible.
+local function rel_name(flavour, motif)
+  if motif == "flow" then
+    return ("wallpaper/thermal-%s-flow-%d.png"):format(flavour, base_seed)
+  end
+  return ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
+end
+
 -------------------------------------------------------------------- write ----
 vim.fn.mkdir(root .. "/wallpaper", "p")
 local written = {}
@@ -532,7 +563,7 @@ for _, flavour in ipairs(palette.order) do
 
   for _, motif in ipairs(motif_order) do
     local png = encode_png(motifs[motif](p, bg_rows))
-    local rel = ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
+    local rel = rel_name(flavour, motif)
     local f = assert(io.open(root .. "/" .. rel, "wb"))
     f:write(png)
     f:close()
@@ -545,7 +576,10 @@ end
 local list = {}
 for _, flavour in ipairs(palette.order) do
   for _, motif in ipairs(motif_order) do
-    list[#list + 1] = ("- `wallpaper/thermal-%s-%s.png`"):format(flavour, motif)
+    local nm = motif == "flow"
+      and ("wallpaper/thermal-%s-flow-<seed>.png"):format(flavour)
+      or ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
+    list[#list + 1] = ("- `%s`"):format(nm)
   end
 end
 local readme = table.concat({
@@ -595,3 +629,4 @@ rf:close()
 table.insert(written, "wallpaper/README.md")
 
 print(("thermal: wrote %d wallpaper file(s)"):format(#written))
+print(("thermal: flow seed = %d  (THERMAL_WP_SEED=%d to reproduce)"):format(base_seed, base_seed))
