@@ -1,7 +1,7 @@
 # thermal
 FLAVOUR ?= smoky
 
-.PHONY: build preview check install install-copy slack ghostty tmux all
+.PHONY: build preview check install install-copy slack ghostty tmux wallpaper all
 
 all: check build preview
 
@@ -10,6 +10,9 @@ build:   ## regenerate every derived file from lua/thermal/palette.lua
 
 preview: ## regenerate preview/*.svg from the palette
 	nvim -l scripts/preview.lua
+
+wallpaper: ## generate wallpaper/*.png (4K; not committed) from the palette
+	nvim -l scripts/wallpaper.lua
 
 check:   ## assert every flavour still clears WCAG AA
 	nvim -l scripts/contrast.lua

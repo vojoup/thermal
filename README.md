@@ -28,6 +28,7 @@ generated:
 ```
 make build      # regenerate all derived files      (nvim -l scripts/build.lua)
 make preview    # regenerate preview/*.svg          (nvim -l scripts/preview.lua)
+make wallpaper  # generate wallpaper/*.png (4K)      (nvim -l scripts/wallpaper.lua)
 make check      # assert readability, non-zero exit (nvim -l scripts/contrast.lua)
 make install    # symlink ghostty themes into place (nvim -l scripts/install.lua)
 make all        # check, build, preview
@@ -46,6 +47,7 @@ colors/thermal*.lua              (generated)
 lua/catppuccin/palettes/*.lua    (generated stubs)
 scripts/build.lua                regenerate everything below
 scripts/preview.lua              regenerate the SVG previews
+scripts/wallpaper.lua            regenerate the PNG wallpapers
 scripts/install.lua              symlink ghostty themes into place
 scripts/contrast.lua             readability gate
 
@@ -59,6 +61,8 @@ thermal.tmux                     (generated) self-contained tmux plugin
 tmux/README.md                   (generated) tpm install instructions
 preview/thermal-*.svg            (generated) renders on GitHub
 preview/README.md                (generated)
+wallpaper/thermal-*.png          (generated, gitignored) 4K wallpapers
+wallpaper/README.md              (generated) how to set them
 ```
 
 ## Neovim
