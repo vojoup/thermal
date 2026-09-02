@@ -149,13 +149,24 @@ local function q(v, x, y)
   return r > 255 and 255 or r
 end
 
+-- Deterministic per-pixel film grain (xorshift hash of x,y), so the smoke field
+-- and cap faces carry the visual noise of the real render. Same seed every run.
+local NOISE = 3.4 -- +/- amplitude on the smoke background
+local function grain(x, y)
+  local h = bit.bxor(x * 73856093, y * 19349663)
+  h = bit.bxor(h, bit.lshift(h, 13))
+  h = bit.bxor(h, bit.rshift(h, 17))
+  h = bit.bxor(h, bit.lshift(h, 5))
+  return ((h % 4096) / 4096 - 0.5) * 2 * NOISE
+end
+
 ------------------------------------------------------------------ motifs -----
 -- Each motif is (flavour palette) -> raw scanline payload string.
 
 --- Single heat line: the Thermal Accent Row. The whole field is smoke; one
 --- thin horizontal band carries the heat ramp (cold -> whitehot), softly glowed
 --- and faded at the ends so it never hits the screen edge.
-local function motif_line(p)
+local function motif_line(p, bg_rows)
   local br, bg, bb = hex2rgb(p.bg)
 
   -- heat ramp sampled per column, coldest at the left
@@ -187,7 +198,6 @@ local function motif_line(p)
   local sigma = math.max(6, math.floor(H * 0.008 + 0.5))
   local half = 5 * sigma
 
-  local flat = "\0" .. string.rep(string.char(br, bg, bb), W)
   local rows = {}
   for y = 1, H do
     local dy = y - line_y
@@ -197,25 +207,34 @@ local function motif_line(p)
       for x = 1, W do
         local a = av * edge[x]
         local h = heat[x]
+        local gz = grain(x, y)
         t[x] = string.char(
-          q(mixf(br, h[1], a), x, y), q(mixf(bg, h[2], a), x, y), q(mixf(bb, h[3], a), x, y))
+          q(mixf(br, h[1], a) + gz, x, y), q(mixf(bg, h[2], a) + gz, x, y), q(mixf(bb, h[3], a) + gz, x, y))
       end
       rows[y] = "\0" .. table.concat(t)
     else
-      rows[y] = flat
+      rows[y] = bg_rows[y]
     end
   end
   return table.concat(rows)
 end
 
---- Keycaps: one glossy dark keycap per ramp step, a single centred row on
---- smoke, echoing a line of caps from the Thermal set. Each cap is nearly
---- black -- its hue only emerges from shadow -- with a soft specular shine up
---- top, a lit front lip, darker sides, rounded anti-aliased edges and fine
---- grain. The hotter the step, the more colour survives the shadow.
-local function motif_cubes(p)
+-- signed distance to a rounded rectangle centred at (cx,cy), half-extents hx,hy
+local function rrsdf(px, py, cx, cy, hx, hy, r)
+  local qx = math.abs(px - cx) - (hx - r)
+  local qy = math.abs(py - cy) - (hy - r)
+  local mx = qx > 0 and qx or 0
+  local my = qy > 0 and qy or 0
+  return math.sqrt(mx * mx + my * my) + math.min(math.max(qx, qy), 0) - r
+end
+
+--- Keycaps: one keycap per ramp step, a single centred row on smoke, echoing a
+--- line of caps from the Thermal set. Each cap is a sculpted 3D form -- a glossy
+--- lit TOP face with a soft specular reflection, and a darker FRONT face below
+--- it whose bottom edge catches the light. Nearly black; the hue only emerges
+--- from shadow, more of it the hotter the step. Fine grain on every face.
+local function motif_cubes(p, bg_rows)
   local br, bg_, bb = hex2rgb(p.bg)
-  local smoke = string.char(br, bg_, bb)
   local whi = { hex2rgb(p.whitehot) }
 
   -- per-cap tones: caps read almost black, so diffuse spans a DARK slice of the
@@ -239,14 +258,25 @@ local function motif_cubes(p)
   local start_x = math.floor((W - (n * cell + (n - 1) * gap)) / 2)
   local cy0 = math.floor((H - cell) / 2)
 
-  -- keycap face inset within each cell, with rounded corners
+  -- keycap footprint (slightly taller than wide), centred in the cell
   local pad = math.floor(cell * 0.05)
-  local fw = cell - 2 * pad
   local fh = cell - 2 * pad
-  local rr = fw * 0.14
-  local hw, hh = fw / 2, fh / 2
+  local fw = math.floor(fh * 0.9)
+  local foot_left = math.floor((cell - fw) / 2)
+  local rro = fw * 0.16 -- outer corner radius
 
-  -- per-column: which cap (0 = none) and x within the face
+  -- the top face is inset and shifted up; the strip below it is the front face
+  local sx = fw * 0.09         -- side inset of the top face
+  local ty = fh * 0.05         -- top inset
+  local frh = fh * 0.24        -- front-face height
+  local seam = fh - frh        -- boundary between top and front
+  local top_cx = fw / 2
+  local top_cy = (ty + seam) / 2
+  local top_hx = (fw - 2 * sx) / 2
+  local top_hy = (seam - ty) / 2
+  local rrt = top_hx * 0.28
+
+  -- per-column: which cap (0 = none) and x within the footprint
   local capidx, lpx = {}, {}
   for x = 1, W do
     local xx = (x - 1) - start_x
@@ -256,69 +286,77 @@ local function motif_cubes(p)
       local idx = math.floor(xx / period) + 1
       if idx <= n and w < cell then
         capidx[x] = idx
-        lpx[x] = w - pad
+        lpx[x] = w - foot_left
       end
     end
   end
 
-  math.randomseed(20240901) -- stable grain across runs
-
-  local flat = "\0" .. string.rep(smoke, W)
   local rows = {}
   for y = 1, H do
     local yy = (y - 1) - cy0
-    if yy >= -1 and yy <= cell then
-      local fyp = yy - pad
+    if yy >= pad - 1 and yy <= pad + fh + 1 then
+      local py = yy - pad
       local t = {}
       for x = 1, W do
+        local gz = grain(x, y)
+        local sr, sg, sb = br + gz, bg_ + gz, bb + gz -- noisy smoke
         local c = capidx[x]
-        if c == 0 then
-          t[x] = smoke
+        local px = c ~= 0 and lpx[x] or -1
+        local cov = c ~= 0 and (0.5 - rrsdf(px, py, fw / 2, fh / 2, fw / 2, fh / 2, rro)) or 0
+        if cov <= 0 then
+          t[x] = string.char(q(sr, x, y), q(sg, x, y), q(sb, x, y))
         else
-          local px = lpx[x]
-          -- rounded-rect signed distance; cov gives ~1px anti-aliased edge
-          local qx = math.abs(px - hw) - (hw - rr)
-          local qy = math.abs(fyp - hh) - (hh - rr)
-          local mx = qx > 0 and qx or 0
-          local my = qy > 0 and qy or 0
-          local d = math.sqrt(mx * mx + my * my) + math.min(math.max(qx, qy), 0) - rr
-          local cov = 0.5 - d
-          if cov <= 0 then
-            t[x] = smoke
-          else
-            if cov > 1 then cov = 1 end
-            local u, v = px / fw, fyp / fh
+          if cov > 1 then cov = 1 end
+          local sh, li, g
+          sh, li = shadow[c], lite[c]
+          local cr, cg, cb
+          if rrsdf(px, py, top_cx, top_cy, top_hx, top_hy, rrt) < 0 then
+            -- TOP face: lit from above, soft specular reflection
+            local u = (px - sx) / (fw - 2 * sx)
+            local v = (py - ty) / (seam - ty)
             if v < 0 then v = 0 elseif v > 1 then v = 1 end
-            -- diffuse: light from above, darker toward the bottom and the sides
-            local g = 0.25 + 0.45 * (1 - v)
-            g = g + 0.22 * math.exp(-((v - 0.93) ^ 2) / (2 * 0.025 * 0.025)) -- lit front lip
-            g = g * (1 - 0.30 * (2 * (u - 0.5)) ^ 2)                        -- side falloff
+            g = 0.28 + 0.44 * (1 - v)
+            g = g + 0.10 * math.exp(-(v / 0.05) ^ 2)     -- lit top bevel
+            g = g * (1 - 0.26 * (2 * u - 1) ^ 2)          -- side falloff
             if g < 0 then g = 0 elseif g > 1 then g = 1 end
-            local sh, li = shadow[c], lite[c]
-            local cr = sh[1] + (li[1] - sh[1]) * g
-            local cg = sh[2] + (li[2] - sh[2]) * g
-            local cb = sh[3] + (li[3] - sh[3]) * g
-            -- specular shine: a soft reflection high on the face
-            local du, dv = (u - 0.5) / 0.34, (v - 0.26) / 0.16
-            local s = 0.42 * math.exp(-(du * du + dv * dv) / 2)
+            cr = sh[1] + (li[1] - sh[1]) * g
+            cg = sh[2] + (li[2] - sh[2]) * g
+            cb = sh[3] + (li[3] - sh[3]) * g
+            local du, dv = (u - 0.5) / 0.36, (v - 0.30) / 0.18
+            local s = 0.40 * math.exp(-(du * du + dv * dv) / 2)
             local sp = spec[c]
             cr = cr + (sp[1] - cr) * s
             cg = cg + (sp[2] - cg) * s
             cb = cb + (sp[3] - cb) * s
-            -- luminance grain
-            local nz = (math.random() * 2 - 1) * 4
-            cr = cr + nz; cg = cg + nz; cb = cb + nz
-            -- composite over smoke by edge coverage
-            cr = br + (cr - br) * cov
-            cg = bg_ + (cg - bg_) * cov
-            cb = bb + (cb - bb) * cov
-            t[x] = string.char(q(cr, x, y), q(cg, x, y), q(cb, x, y))
+          elseif py >= seam then
+            -- FRONT face: in shadow, but the bottom edge catches the light
+            local u = px / fw
+            local vf = (py - seam) / frh
+            g = 0.12 + 0.05 * (1 - vf)
+            g = g + 0.34 * math.exp(-((vf - 0.85) ^ 2) / (2 * 0.06 * 0.06)) -- front lip
+            g = g * (1 - 0.22 * (2 * u - 1) ^ 2)
+            if vf < 0.05 then g = g * 0.4 end             -- dark seam under the top
+            if g < 0 then g = 0 elseif g > 1 then g = 1 end
+            cr = sh[1] + (li[1] - sh[1]) * g
+            cg = sh[2] + (li[2] - sh[2]) * g
+            cb = sh[3] + (li[3] - sh[3]) * g
+          else
+            -- top/side bevel: a dark rim that frames the top face
+            g = 0.10
+            cr = sh[1] + (li[1] - sh[1]) * g
+            cg = sh[2] + (li[2] - sh[2]) * g
+            cb = sh[3] + (li[3] - sh[3]) * g
           end
+          cr = cr + gz; cg = cg + gz; cb = cb + gz         -- grain on the face
+          cr = sr + (cr - sr) * cov                        -- AA over noisy smoke
+          cg = sg + (cg - sg) * cov
+          cb = sb + (cb - sb) * cov
+          t[x] = string.char(q(cr, x, y), q(cg, x, y), q(cb, x, y))
         end
       end
       rows[y] = "\0" .. table.concat(t)
     else
-      rows[y] = flat
+      rows[y] = bg_rows[y]
     end
   end
   return table.concat(rows)
@@ -327,9 +365,8 @@ end
 --- Horizon glow: the heat ramp as a broad, soft band low on the screen, like a
 --- thermal horizon rising into smoke. Same per-column heat as the line, but a
 --- wide vertical falloff and no hard core.
-local function motif_glow(p)
+local function motif_glow(p, bg_rows)
   local br, bg_, bb = hex2rgb(p.bg)
-  local smoke = string.char(br, bg_, bb)
 
   local stops = {}
   for _, key in ipairs(palette.ramp) do stops[#stops + 1] = { hex2rgb(p[key]) } end
@@ -352,7 +389,6 @@ local function motif_glow(p)
   local half = 3 * sigma
   local peak = 0.92
 
-  local flat = "\0" .. string.rep(smoke, W)
   local rows = {}
   for y = 1, H do
     local dy = y - horizon
@@ -362,11 +398,12 @@ local function motif_glow(p)
       for x = 1, W do
         local a = av * edge[x]
         local h = heat[x]
-        t[x] = string.char(q(mixf(br, h[1], a), x, y), q(mixf(bg_, h[2], a), x, y), q(mixf(bb, h[3], a), x, y))
+        local gz = grain(x, y)
+        t[x] = string.char(q(mixf(br, h[1], a) + gz, x, y), q(mixf(bg_, h[2], a) + gz, x, y), q(mixf(bb, h[3], a) + gz, x, y))
       end
       rows[y] = "\0" .. table.concat(t)
     else
-      rows[y] = flat
+      rows[y] = bg_rows[y]
     end
   end
   return table.concat(rows)
@@ -374,9 +411,8 @@ end
 
 --- Flat smoke + vignette: near-solid flavour bg, darkening gently toward the
 --- corners. The quietest motif -- pure colour pairing, no heat.
-local function motif_vignette(p)
+local function motif_vignette(p, _)
   local br, bg_, bb = hex2rgb(p.bg)
-  local smoke = string.char(br, bg_, bb)
   local dk = { br * 0.42, bg_ * 0.42, bb * 0.42 } -- corner target: ~60% to black
   local inner = 0.30 -- inner radius fraction that stays pure bg
 
@@ -393,11 +429,8 @@ local function motif_vignette(p)
     for x = 1, W do
       local r = math.sqrt(nx2[x] + dy2) / norm
       local v = smooth((r - inner) / (1 - inner))
-      if v <= 0 then
-        t[x] = smoke
-      else
-        t[x] = string.char(q(mixf(br, dk[1], v), x, y), q(mixf(bg_, dk[2], v), x, y), q(mixf(bb, dk[3], v), x, y))
-      end
+      local gz = grain(x, y)
+      t[x] = string.char(q(mixf(br, dk[1], v) + gz, x, y), q(mixf(bg_, dk[2], v) + gz, x, y), q(mixf(bb, dk[3], v) + gz, x, y))
     end
     rows[y] = "\0" .. table.concat(t)
   end
@@ -418,8 +451,22 @@ vim.fn.mkdir(root .. "/wallpaper", "p")
 local written = {}
 for _, flavour in ipairs(palette.order) do
   local p = palette.flavours[flavour]
+
+  -- the smoke field with grain, built once per flavour and shared by the motifs
+  -- that sit on it (line, glow, cubes) for their untouched rows
+  local br, bg_, bb = hex2rgb(p.bg)
+  local bg_rows = {}
+  for y = 1, H do
+    local tt = {}
+    for x = 1, W do
+      local gz = grain(x, y)
+      tt[x] = string.char(q(br + gz, x, y), q(bg_ + gz, x, y), q(bb + gz, x, y))
+    end
+    bg_rows[y] = "\0" .. table.concat(tt)
+  end
+
   for _, motif in ipairs(motif_order) do
-    local png = encode_png(motifs[motif](p))
+    local png = encode_png(motifs[motif](p, bg_rows))
     local rel = ("wallpaper/thermal-%s-%s.png"):format(flavour, motif)
     local f = assert(io.open(root .. "/" .. rel, "wb"))
     f:write(png)
