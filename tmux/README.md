@@ -46,3 +46,20 @@ set -g @thermal-tmux-justify centre     # left | centre | right
 set -g @thermal-tmux-status bottom      # top | bottom
 set -g @thermal-tmux-indicator-str " tmux "
 ```
+
+## Undercurl
+
+tmux flattens undercurl (and drops its colour) unless you pass the `Smulx`
+and `Setulc` capabilities through. Without these, the theme's curled
+diagnostic underlines render as flat lines inside tmux. Add to `~/.tmux.conf`:
+
+```tmux
+set -g default-terminal "tmux-256color"
+set -as terminal-features ",xterm-ghostty:RGB"
+set -as terminal-overrides ',*:Smulx=\E[4::%p1%dm'
+set -as terminal-overrides ',*:Setulc=\E[58::2::%p1%{65536}%/%d::%p1%{256}%/%{255}%&%d::%p1%{255}%&%d%;m'
+```
+
+Then `tmux kill-server` and restart. The outer terminal must support undercurl
+too -- Ghostty does. Test a pane with `printf '\e[4:3mx\e[0m\n'`: a curl means
+it's working.
