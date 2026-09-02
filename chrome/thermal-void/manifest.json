@@ -9,7 +9,7 @@
       "frame_inactive": [0, 0, 0],
       "frame_incognito": [0, 0, 0],
       "frame_incognito_inactive": [0, 0, 0],
-      "toolbar": [8, 8, 10],
+      "toolbar": [22, 22, 27],
       "toolbar_text": [194, 194, 203],
       "toolbar_button_icon": [194, 194, 203],
       "tab_text": [231, 231, 238],
@@ -19,8 +19,8 @@
       "ntp_background": [8, 8, 10],
       "ntp_text": [194, 194, 203],
       "ntp_link": [246, 168, 63],
-      "button_background": [14, 14, 18],
-      "omnibox_background": [14, 14, 18],
+      "button_background": [36, 36, 43],
+      "omnibox_background": [8, 8, 10],
       "omnibox_text": [194, 194, 203]
     },
     "tints": {

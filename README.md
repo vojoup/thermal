@@ -177,9 +177,11 @@ Each flavour is an unpacked extension theme under `chrome/thermal-*`. Open
 it at one flavour's directory (e.g. `chrome/thermal-smoky`). Details and how to
 pack a `.crx` are in [`chrome/README.md`](chrome/README.md).
 
-The frame behind the tabs is the darkest smoke and the toolbar is bg, so the
-browser chrome sits on the same smoke as the terminal. Amber lands only on the
-active tab and new-tab links. Chrome allows one theme at a time; loading a
+The frame behind the tabs is the darkest smoke and the toolbar is a raised smoke
+surface a step lighter — Chrome paints multi-selected tabs with the toolbar
+colour and unselected tabs with the frame colour, so that gap is what makes a
+multi-tab selection visible. Amber lands only on new-tab links. Chrome allows one
+theme at a time; loading a
 flavour replaces the last, and unpacked themes don't auto-update — after a
 palette edit and `make build`, hit the reload arrow on the theme's card.
 
