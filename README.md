@@ -1,6 +1,6 @@
 # thermal
 
-A dark, low-contrast theme for Neovim, Ghostty, tmux and Slack, based on the PBTfans
+A dark, low-contrast theme for Neovim, Ghostty, tmux, Slack and Chrome, based on the PBTfans
 **Thermal** keycap set designed by Matthew Encina of
 [Mod Musings](https://www.modmusings.com/thermal-keycaps).
 
@@ -59,6 +59,8 @@ slack/thermal-*.txt              (generated) one string per file
 slack/README.md                  (generated) copy-from-GitHub table
 thermal.tmux                     (generated) self-contained tmux plugin
 tmux/README.md                   (generated) tpm install instructions
+chrome/thermal-*/manifest.json   (generated) unpacked browser themes
+chrome/README.md                 (generated) load-unpacked instructions
 preview/thermal-*.svg            (generated) renders on GitHub
 preview/README.md                (generated)
 wallpaper/thermal-*.png          (generated, gitignored) 4K wallpapers
@@ -168,6 +170,19 @@ message pane, so turn on Appearance → Dark as well or the two won't match. The
 active channel gets a smoky selection background with amber text rather than an
 amber fill, so the heat still marks where you are without shouting.
 
+## Chrome
+
+Each flavour is an unpacked extension theme under `chrome/thermal-*`. Open
+`chrome://extensions`, turn on Developer mode, hit **Load unpacked**, and point
+it at one flavour's directory (e.g. `chrome/thermal-smoky`). Details and how to
+pack a `.crx` are in [`chrome/README.md`](chrome/README.md).
+
+The frame behind the tabs is the darkest smoke and the toolbar is bg, so the
+browser chrome sits on the same smoke as the terminal. Amber lands only on the
+active tab and new-tab links. Chrome allows one theme at a time; loading a
+flavour replaces the last, and unpacked themes don't auto-update — after a
+palette edit and `make build`, hit the reload arrow on the theme's card.
+
 ## Adding a flavour
 
 Add a block to `M.flavours` in `lua/thermal/palette.lua`, add its name to
@@ -178,9 +193,10 @@ make all
 ```
 
 That emits the colorscheme entry point, the catppuccin stub, the Ghostty theme,
-the Slack string, both copy-from-GitHub tables and the SVG preview together. `make install`
-picks up the new flavour's Ghostty theme, and `:ThermalCopy` and `:Thermal`
-complete on it. Nothing else to touch.
+the Slack string, both copy-from-GitHub tables, the tmux flavour arm, the Chrome
+theme and the SVG preview together. `make install` picks up the new flavour's
+Ghostty theme, and `:ThermalCopy` and `:Thermal` complete on it. Nothing else to
+touch.
 
 ## Design notes
 

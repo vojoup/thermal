@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "version": "1.0.0",
+  "name": "Thermal (void)",
+  "description": "thermal -- a dark, low-contrast theme based on the PBTfans Thermal keycap set. github.com/vojoup/thermal",
+  "theme": {
+    "colors": {
+      "frame": [0, 0, 0],
+      "frame_inactive": [0, 0, 0],
+      "frame_incognito": [0, 0, 0],
+      "frame_incognito_inactive": [0, 0, 0],
+      "toolbar": [8, 8, 10],
+      "toolbar_text": [194, 194, 203],
+      "toolbar_button_icon": [194, 194, 203],
+      "tab_text": [231, 231, 238],
+      "tab_background_text": [132, 132, 143],
+      "tab_background_text_inactive": [102, 102, 113],
+      "bookmark_text": [194, 194, 203],
+      "ntp_background": [8, 8, 10],
+      "ntp_text": [194, 194, 203],
+      "ntp_link": [246, 168, 63],
+      "button_background": [14, 14, 18],
+      "omnibox_background": [14, 14, 18],
+      "omnibox_text": [194, 194, 203]
+    },
+    "tints": {
+      "buttons": [-1.0, -1.0, 0.83]
+    },
+    "properties": {
+      "ntp_background_alignment": "bottom",
+      "ntp_logo_alternate": 1
+    }
+  }
+}

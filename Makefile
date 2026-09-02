@@ -1,7 +1,7 @@
 # thermal
 FLAVOUR ?= smoky
 
-.PHONY: build preview check install install-copy slack ghostty tmux wallpaper all
+.PHONY: build preview check install install-copy slack ghostty tmux chrome wallpaper all
 
 all: check build preview
 
@@ -31,3 +31,6 @@ ghostty: ## print a ghostty theme: make ghostty FLAVOUR=ash
 
 tmux:    ## print the generated tmux plugin
 	@cat thermal.tmux
+
+chrome:  ## print a chrome theme manifest: make chrome FLAVOUR=void
+	@cat chrome/thermal-$(FLAVOUR)/manifest.json
