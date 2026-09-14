@@ -1,7 +1,8 @@
 # thermal
 
-A dark, low-contrast theme for Neovim, Ghostty, tmux, Slack and Chrome, based on the PBTfans
-**Thermal** keycap set designed by Matthew Encina of
+A dark, low-contrast theme for Neovim, VS Code, Claude Code, Ghostty, tmux, Slack
+and Chrome, based on the PBTfans **Thermal** keycap set designed by Matthew
+Encina of
 [Mod Musings](https://www.modmusings.com/thermal-keycaps).
 
 The set is smoky black bases with dark gray translucent tops and gray legends —
@@ -20,7 +21,7 @@ Flavours: `smoky` (the set as photographed), `void` (darker), `ash` (lighter).
 `void` and `ash` in [preview/](preview/README.md). Previews are generated from
 the palette by `make preview`, so they can't drift from the theme.
 
-## One palette, three targets
+## One palette, every target
 
 `lua/thermal/palette.lua` is the only file you edit by hand. Everything else is
 generated:
@@ -30,7 +31,7 @@ make build      # regenerate all derived files      (nvim -l scripts/build.lua)
 make preview    # regenerate preview/*.svg          (nvim -l scripts/preview.lua)
 make wallpaper  # generate wallpaper/*.png (4K)      (nvim -l scripts/wallpaper.lua)
 make check      # assert readability, non-zero exit (nvim -l scripts/contrast.lua)
-make install    # symlink ghostty themes into place (nvim -l scripts/install.lua)
+make install    # symlink every installable target  (nvim -l scripts/install.lua)
 make all        # check, build, preview
 ```
 
@@ -48,7 +49,7 @@ lua/catppuccin/palettes/*.lua    (generated stubs)
 scripts/build.lua                regenerate everything below
 scripts/preview.lua              regenerate the SVG previews
 scripts/wallpaper.lua            regenerate the PNG wallpapers
-scripts/install.lua              symlink ghostty themes into place
+scripts/install.lua              symlink ghostty/vscode/claude themes into place
 scripts/contrast.lua             readability gate
 
 docs/going-standalone.md         the plan for dropping catppuccin
@@ -61,6 +62,11 @@ thermal.tmux                     (generated) self-contained tmux plugin
 tmux/README.md                   (generated) tpm install instructions
 chrome/thermal-*/manifest.json   (generated) unpacked browser themes
 chrome/README.md                 (generated) load-unpacked instructions
+vscode/package.json              (generated) one extension, all flavours
+vscode/themes/*.json             (generated) colour themes
+vscode/README.md                 (generated) symlink install
+claude-code/thermal-*.json       (generated) CLI themes
+claude-code/README.md            (generated) why the base is dark-ansi
 preview/thermal-*.svg            (generated) renders on GitHub
 preview/README.md                (generated)
 wallpaper/thermal-*.png          (generated, gitignored) 4K wallpapers
@@ -123,9 +129,11 @@ Both arguments tab-complete.
 **From the shell, in the repo:**
 
 ```
-make install                   symlink all ghostty themes into place
+make install                   symlink every installable target into place
 make slack FLAVOUR=void | pbcopy
 make ghostty FLAVOUR=ash
+make vscode FLAVOUR=void
+make claude FLAVOUR=ash
 cat slack/thermal-void.txt     the files hold only the string, nothing else
 ```
 
@@ -144,9 +152,10 @@ nvim -l scripts/install.lua          # or: make install
 ```
 
 Symlinks every flavour into `$XDG_CONFIG_HOME/ghostty/themes` (falling back to
-`~/.config`), so a palette edit plus `make build` updates your terminal with no
-second step. Pass `--copy` for real files instead of links. It's idempotent, and
-it refuses to overwrite a file at one of those paths that it didn't create.
+`~/.config`) — along with the Claude Code themes and the VS Code extension — so a
+palette edit plus `make build` updates all three with no second step. Pass
+`--copy` for real files instead of links. It's idempotent, and it refuses to
+overwrite anything at one of those paths that it didn't create.
 
 Then in `~/.config/ghostty/config`:
 
@@ -169,6 +178,44 @@ Slack's custom theme only styles the **sidebar**. There is no way to reach the
 message pane, so turn on Appearance → Dark as well or the two won't match. The
 active channel gets a smoky selection background with amber text rather than an
 amber fill, so the heat still marks where you are without shouting.
+
+## VS Code
+
+One extension carries all three flavours. `make install` symlinks `vscode/` into
+every editor it finds — VS Code, Insiders, VSCodium, Cursor — then reload the
+window and `Cmd+K Cmd+T` → **Thermal (smoky)**. Details in
+[`vscode/README.md`](vscode/README.md).
+
+Semantic highlighting is on, so a running language server's classifications win
+and the TextMate scopes are the fallback. Both lists make the same assignments
+the Neovim theme does, and the integrated terminal gets all sixteen ANSI slots
+from the same `engine.ansi()` the Ghostty theme is built from — a shell inside
+the editor matches a shell outside it.
+
+## Claude Code
+
+```
+make install
+```
+
+then `/theme` and pick **Thermal**. Details in
+[`claude-code/README.md`](claude-code/README.md).
+
+Each flavour is a `~/.claude/themes/*.json` of `{ name, base, overrides }`, and
+the base is **`dark-ansi`** — which is the whole trick. Claude Code doesn't read
+a theme's overrides when it highlights code: on a `dark` base the syntax colours
+in code blocks and diffs are hardcoded Monokai, on `light` hardcoded GitHub. Only
+on an `*-ansi` base does every syntax scope resolve through the *terminal's* ANSI
+slots — where thermal already lives. So paired with the Ghostty theme, the
+snippets Claude prints and the diffs it shows are painted from this same palette
+rather than sitting in the terminal as a foreign block of Monokai.
+
+The cost is that those scopes are pinned to ANSI slots rather than to thermal's
+own role assignments, so two land one seat over from the editor: strings take
+slot 10's sage instead of frost, types take slot 14's teal instead of cold.
+
+Diff *backgrounds* are override-driven and survive the ansi base, so they're set
+explicitly — teal in, ember out, each washed over its own flavour's smoke.
 
 ## Chrome
 
@@ -196,9 +243,10 @@ make all
 
 That emits the colorscheme entry point, the catppuccin stub, the Ghostty theme,
 the Slack string, both copy-from-GitHub tables, the tmux flavour arm, the Chrome
-theme and the SVG preview together. `make install` picks up the new flavour's
-Ghostty theme, and `:ThermalCopy` and `:Thermal` complete on it. Nothing else to
-touch.
+theme, the VS Code theme and its `package.json` contribution, the Claude Code
+theme and the SVG preview together. `make install` picks up the new flavour
+everywhere it installs, and `:ThermalCopy` and `:Thermal` complete on it. Nothing
+else to touch.
 
 ## Design notes
 
@@ -243,7 +291,7 @@ flavours if you have both installed. `lua/thermal/catppuccin.lua` keys
 
 The layering is built for it: `palette.lua` holds colours under our own names and
 `lua/thermal/catppuccin.lua` is the only file that knows what a `mauve` is.
-Ghostty, Slack and the previews are unaffected either way.
+Ghostty, Slack, VS Code, Claude Code and the previews are unaffected either way.
 
 The full plan — why we'd bother, what has to be reimplemented, what will bite,
 and what should actually trigger the decision — is in

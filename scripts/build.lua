@@ -456,6 +456,799 @@ write("chrome/README.md", table.concat({
   "",
 }, "\n"))
 
+---------------------------------------------------------------- shared ------
+-- Helpers used by the JSON targets below (vscode, claude-code). Hand-rolled
+-- rather than vim.json.encode because key ORDER is the documentation here: a
+-- theme file you can read top to bottom is worth more than two saved lines.
+
+local function jstr(s)
+  return '"' .. s:gsub("\\", "\\\\"):gsub('"', '\\"') .. '"'
+end
+
+--- Ordered JSON object from a list of { key, raw_json_value } pairs.
+--- `indent` is the indent of the MEMBERS; the closing brace sits two back.
+local function jobj(members, indent)
+  local pad = (" "):rep(indent)
+  local out = {}
+  for _, kv in ipairs(members) do
+    table.insert(out, ("%s%s: %s"):format(pad, jstr(kv[1]), kv[2]))
+  end
+  return "{\n" .. table.concat(out, ",\n") .. "\n" .. (" "):rep(indent - 2) .. "}"
+end
+
+--- Mix `a` into `b` by `t` (0 = all b, 1 = all a).
+--- The diff washes are built this way so they sit ON each flavour's own smoke
+--- instead of being three hand-picked greens that drift apart.
+local function blend(a, b, t)
+  local function ch(hex, i) return tonumber(hex:sub(i, i + 1), 16) end
+  return ("#%02X%02X%02X"):format(
+    math.floor(ch(a, 2) * t + ch(b, 2) * (1 - t) + 0.5),
+    math.floor(ch(a, 4) * t + ch(b, 4) * (1 - t) + 0.5),
+    math.floor(ch(a, 6) * t + ch(b, 6) * (1 - t) + 0.5)
+  )
+end
+
+---------------------------------------------------------------- vscode ------
+-- ONE extension carrying all three flavours -- VS Code lets a single extension
+-- contribute several themes, and the picker groups them, so three separate
+-- extensions would only make the list longer.
+--
+-- The role assignments are the same ones the Neovim side makes in
+-- lua/thermal/catppuccin.lua: magenta is keywords, amber is functions, frost is
+-- strings, flare is numbers and operators, cold is types, violet is members,
+-- purple is imports and modifiers. Written out longhand here because TextMate
+-- scopes have no slot to borrow.
+--
+-- Install by symlinking vscode/ into ~/.vscode/extensions -- see
+-- `nvim -l scripts/install.lua`, which does it.
+
+--- Workbench (chrome) colours for one flavour.
+local function vscode_colors(p)
+  -- 8-digit hexes are VS Code's way of saying "wash, don't paint". Diff and
+  -- scrollbar surfaces have to let the text under them through.
+  local add_wash, del_wash = p.frost .. "1F", p.ember .. "1F"
+  local add_line, del_line = p.frost .. "12", p.ember .. "12"
+  return {
+    -- base
+    { "focusBorder", p.amber },
+    { "foreground", p.fg },
+    { "descriptionForeground", p.muted },
+    { "errorForeground", p.ember },
+    { "icon.foreground", p.muted },
+    { "selection.background", p.bg_sel },
+    { "widget.shadow", "#00000066" },
+    { "widget.border", p.border },
+    { "textLink.foreground", p.cold },
+    { "textLink.activeForeground", p.cold_hi },
+    { "textBlockQuote.background", p.bg_alt },
+    { "textBlockQuote.border", p.border },
+    { "textCodeBlock.background", p.bg_alt },
+    { "textPreformat.foreground", p.glow },
+    { "textSeparator.foreground", p.border },
+
+    -- editor
+    { "editor.background", p.bg },
+    { "editor.foreground", p.fg },
+    { "editorLineNumber.foreground", p.gutter },
+    { "editorLineNumber.activeForeground", p.amber },
+    { "editorCursor.foreground", p.amber },
+    { "editorCursor.background", p.bg_dark },
+    { "editor.lineHighlightBackground", p.bg_hl },
+    { "editor.selectionBackground", p.bg_sel },
+    { "editor.inactiveSelectionBackground", p.bg_hl },
+    { "editor.selectionHighlightBackground", p.bg_hl },
+    { "editor.wordHighlightBackground", p.bg_hl },
+    { "editor.wordHighlightStrongBackground", p.bg_sel },
+    -- the set's signature: the heat line landing on a key
+    { "editor.findMatchBackground", p.amber },
+    { "editor.findMatchForeground", p.bg_dark },
+    { "editor.findMatchHighlightBackground", p.amber .. "40" },
+    { "editor.findRangeHighlightBackground", p.bg_hl },
+    { "editor.hoverHighlightBackground", p.bg_hl },
+    { "editor.rangeHighlightBackground", p.bg_hl },
+    { "editorWhitespace.foreground", p.border },
+    { "editorIndentGuide.background1", p.border },
+    { "editorIndentGuide.activeBackground1", p.gutter },
+    { "editorRuler.foreground", p.border },
+    { "editorBracketMatch.background", p.bg_sel },
+    { "editorBracketMatch.border", p.gutter },
+    { "editorCodeLens.foreground", p.dim },
+    { "editorInlayHint.foreground", p.dim },
+    { "editorInlayHint.background", p.bg_alt },
+    { "editorLink.activeForeground", p.cold },
+    { "editorOverviewRuler.border", p.border },
+    { "editorOverviewRuler.findMatchForeground", p.amber },
+    { "editorOverviewRuler.addedForeground", p.frost },
+    { "editorOverviewRuler.modifiedForeground", p.amber },
+    { "editorOverviewRuler.deletedForeground", p.ember },
+    { "editorOverviewRuler.errorForeground", p.ember },
+    { "editorOverviewRuler.warningForeground", p.amber },
+    { "editorOverviewRuler.infoForeground", p.cold },
+    { "editorGutter.background", p.bg },
+    { "editorGutter.addedBackground", p.frost },
+    { "editorGutter.modifiedBackground", p.amber },
+    { "editorGutter.deletedBackground", p.ember },
+
+    -- diagnostics
+    { "editorError.foreground", p.ember },
+    { "editorWarning.foreground", p.amber },
+    { "editorInfo.foreground", p.cold },
+    { "editorHint.foreground", p.frost },
+    { "problemsErrorIcon.foreground", p.ember },
+    { "problemsWarningIcon.foreground", p.amber },
+    { "problemsInfoIcon.foreground", p.cold },
+
+    -- diffs: teal in, ember out; no green, same as everywhere else
+    { "diffEditor.insertedTextBackground", add_wash },
+    { "diffEditor.removedTextBackground", del_wash },
+    { "diffEditor.insertedLineBackground", add_line },
+    { "diffEditor.removedLineBackground", del_line },
+    { "diffEditor.border", p.border },
+    { "diffEditorOverview.insertedForeground", p.frost },
+    { "diffEditorOverview.removedForeground", p.ember },
+
+    -- merge conflicts
+    { "merge.currentHeaderBackground", p.frost .. "33" },
+    { "merge.currentContentBackground", add_line },
+    { "merge.incomingHeaderBackground", p.cold .. "33" },
+    { "merge.incomingContentBackground", p.cold .. "12" },
+    { "merge.border", p.border },
+
+    -- floating surfaces
+    { "editorWidget.background", p.bg_alt },
+    { "editorWidget.border", p.border },
+    { "editorWidget.foreground", p.fg },
+    { "editorSuggestWidget.background", p.bg_alt },
+    { "editorSuggestWidget.border", p.border },
+    { "editorSuggestWidget.foreground", p.fg },
+    { "editorSuggestWidget.selectedBackground", p.bg_sel },
+    { "editorSuggestWidget.selectedForeground", p.fg_hi },
+    { "editorSuggestWidget.highlightForeground", p.amber },
+    { "editorHoverWidget.background", p.bg_alt },
+    { "editorHoverWidget.border", p.border },
+    { "editorMarkerNavigation.background", p.bg_alt },
+    { "peekView.border", p.border },
+    { "peekViewEditor.background", p.bg_alt },
+    { "peekViewEditor.matchHighlightBackground", p.amber .. "40" },
+    { "peekViewResult.background", p.bg_dark },
+    { "peekViewResult.selectionBackground", p.bg_sel },
+    { "peekViewResult.lineForeground", p.fg },
+    { "peekViewResult.fileForeground", p.fg_hi },
+    { "peekViewResult.matchHighlightBackground", p.amber .. "40" },
+    { "peekViewTitle.background", p.bg_dark },
+    { "peekViewTitleLabel.foreground", p.fg_hi },
+    { "peekViewTitleDescription.foreground", p.muted },
+
+    -- shell
+    { "activityBar.background", p.bg_dark },
+    { "activityBar.foreground", p.fg_hi },
+    { "activityBar.inactiveForeground", p.muted },
+    { "activityBar.border", p.border },
+    { "activityBar.activeBorder", p.amber },
+    { "activityBar.activeBackground", p.bg_alt },
+    { "activityBarBadge.background", p.amber },
+    { "activityBarBadge.foreground", p.bg_dark },
+    { "sideBar.background", p.bg_alt },
+    { "sideBar.foreground", p.fg },
+    { "sideBar.border", p.border },
+    { "sideBarTitle.foreground", p.muted },
+    { "sideBarSectionHeader.background", p.bg },
+    { "sideBarSectionHeader.foreground", p.fg_hi },
+    { "sideBarSectionHeader.border", p.border },
+    { "editorGroup.border", p.border },
+    { "editorGroupHeader.tabsBackground", p.bg_alt },
+    { "editorGroupHeader.tabsBorder", p.border },
+    { "editorGroupHeader.noTabsBackground", p.bg_alt },
+    { "tab.activeBackground", p.bg },
+    { "tab.activeForeground", p.fg_hi },
+    { "tab.activeBorderTop", p.amber },
+    { "tab.inactiveBackground", p.bg_alt },
+    { "tab.inactiveForeground", p.muted },
+    { "tab.unfocusedActiveForeground", p.muted },
+    { "tab.unfocusedActiveBorderTop", p.gutter },
+    { "tab.hoverBackground", p.bg_hl },
+    { "tab.border", p.border },
+    { "panel.background", p.bg_alt },
+    { "panel.border", p.border },
+    { "panelTitle.activeForeground", p.fg_hi },
+    { "panelTitle.inactiveForeground", p.muted },
+    { "panelTitle.activeBorder", p.amber },
+    { "statusBar.background", p.bg_dark },
+    { "statusBar.foreground", p.muted },
+    { "statusBar.border", p.border },
+    { "statusBar.noFolderBackground", p.bg_dark },
+    { "statusBar.debuggingBackground", p.flare },
+    { "statusBar.debuggingForeground", p.bg_dark },
+    { "statusBarItem.remoteBackground", p.bg_hl },
+    { "statusBarItem.remoteForeground", p.fg },
+    { "statusBarItem.hoverBackground", p.bg_hl },
+    { "statusBarItem.errorBackground", p.ember },
+    { "statusBarItem.errorForeground", p.bg_dark },
+    { "statusBarItem.warningBackground", p.amber },
+    { "statusBarItem.warningForeground", p.bg_dark },
+    { "titleBar.activeBackground", p.bg_dark },
+    { "titleBar.activeForeground", p.fg },
+    { "titleBar.inactiveBackground", p.bg_dark },
+    { "titleBar.inactiveForeground", p.dim },
+    { "titleBar.border", p.border },
+    { "breadcrumb.background", p.bg },
+    { "breadcrumb.foreground", p.muted },
+    { "breadcrumb.focusForeground", p.fg_hi },
+    { "breadcrumb.activeSelectionForeground", p.amber },
+    { "breadcrumbPicker.background", p.bg_alt },
+    { "menu.background", p.bg_alt },
+    { "menu.foreground", p.fg },
+    { "menu.border", p.border },
+    { "menu.selectionBackground", p.bg_sel },
+    { "menu.selectionForeground", p.fg_hi },
+    { "menu.separatorBackground", p.border },
+    { "menubar.selectionBackground", p.bg_hl },
+
+    -- lists and inputs
+    { "list.activeSelectionBackground", p.bg_sel },
+    { "list.activeSelectionForeground", p.fg_hi },
+    { "list.inactiveSelectionBackground", p.bg_hl },
+    { "list.inactiveSelectionForeground", p.fg },
+    { "list.hoverBackground", p.bg_hl },
+    { "list.focusBackground", p.bg_sel },
+    { "list.focusForeground", p.fg_hi },
+    { "list.highlightForeground", p.amber },
+    { "list.errorForeground", p.ember },
+    { "list.warningForeground", p.amber },
+    { "list.dropBackground", p.bg_sel },
+    { "tree.indentGuidesStroke", p.border },
+    { "input.background", p.bg_alt },
+    { "input.foreground", p.fg },
+    { "input.border", p.border },
+    { "input.placeholderForeground", p.muted },
+    { "inputOption.activeBorder", p.amber },
+    { "inputOption.activeForeground", p.fg_hi },
+    { "inputValidation.errorBackground", p.bg_alt },
+    { "inputValidation.errorBorder", p.ember },
+    { "inputValidation.warningBackground", p.bg_alt },
+    { "inputValidation.warningBorder", p.amber },
+    { "inputValidation.infoBackground", p.bg_alt },
+    { "inputValidation.infoBorder", p.cold },
+    { "dropdown.background", p.bg_alt },
+    { "dropdown.foreground", p.fg },
+    { "dropdown.border", p.border },
+    { "dropdown.listBackground", p.bg_alt },
+    { "quickInput.background", p.bg_alt },
+    { "quickInput.foreground", p.fg },
+    { "quickInputList.focusBackground", p.bg_sel },
+    { "quickInputList.focusForeground", p.fg_hi },
+    { "pickerGroup.border", p.border },
+    { "pickerGroup.foreground", p.amber },
+    { "button.background", p.amber },
+    { "button.foreground", p.bg_dark },
+    { "button.hoverBackground", p.glow },
+    { "button.secondaryBackground", p.bg_sel },
+    { "button.secondaryForeground", p.fg },
+    { "button.secondaryHoverBackground", p.border },
+    { "badge.background", p.bg_sel },
+    { "badge.foreground", p.fg_hi },
+    { "progressBar.background", p.amber },
+    { "scrollbar.shadow", "#00000066" },
+    { "scrollbarSlider.background", p.bg_sel .. "99" },
+    { "scrollbarSlider.hoverBackground", p.border .. "CC" },
+    { "scrollbarSlider.activeBackground", p.gutter .. "CC" },
+    { "minimap.findMatchHighlight", p.amber },
+    { "minimap.selectionHighlight", p.bg_sel },
+    { "minimap.errorHighlight", p.ember },
+    { "minimap.warningHighlight", p.amber },
+    { "minimapSlider.background", p.bg_sel .. "66" },
+    { "minimapGutter.addedBackground", p.frost },
+    { "minimapGutter.modifiedBackground", p.amber },
+    { "minimapGutter.deletedBackground", p.ember },
+
+    -- notifications
+    { "notificationCenter.border", p.border },
+    { "notificationCenterHeader.background", p.bg },
+    { "notificationCenterHeader.foreground", p.fg_hi },
+    { "notifications.background", p.bg_alt },
+    { "notifications.foreground", p.fg },
+    { "notifications.border", p.border },
+    { "notificationsErrorIcon.foreground", p.ember },
+    { "notificationsWarningIcon.foreground", p.amber },
+    { "notificationsInfoIcon.foreground", p.cold },
+
+    -- source control
+    { "gitDecoration.addedResourceForeground", p.frost },
+    { "gitDecoration.modifiedResourceForeground", p.amber },
+    { "gitDecoration.deletedResourceForeground", p.ember },
+    { "gitDecoration.renamedResourceForeground", p.violet },
+    { "gitDecoration.untrackedResourceForeground", p.violet },
+    { "gitDecoration.ignoredResourceForeground", p.gutter },
+    { "gitDecoration.conflictingResourceForeground", p.magenta },
+    { "gitDecoration.stageModifiedResourceForeground", p.amber },
+    { "gitDecoration.stageDeletedResourceForeground", p.ember },
+
+    -- terminal: the same sixteen slots the ghostty theme ships
+    { "terminal.background", p.bg },
+    { "terminal.foreground", p.fg },
+    { "terminal.selectionBackground", p.bg_sel },
+    { "terminalCursor.foreground", p.amber },
+    { "terminalCursor.background", p.bg },
+    { "terminal.border", p.border },
+
+    -- debug
+    { "debugToolBar.background", p.bg_alt },
+    { "debugToolBar.border", p.border },
+    { "debugIcon.breakpointForeground", p.ember },
+    { "editor.stackFrameHighlightBackground", p.amber .. "26" },
+    { "editor.focusedStackFrameHighlightBackground", p.amber .. "3D" },
+
+    -- misc accents
+    { "charts.red", p.ember },
+    { "charts.blue", p.cold },
+    { "charts.yellow", p.amber },
+    { "charts.orange", p.flare },
+    { "charts.green", p.frost },
+    { "charts.purple", p.purple },
+    { "charts.foreground", p.fg },
+    { "charts.lines", p.border },
+    { "testing.iconPassed", p.frost },
+    { "testing.iconFailed", p.ember },
+    { "testing.iconQueued", p.amber },
+    { "testing.iconSkipped", p.dim },
+    { "settings.headerForeground", p.fg_hi },
+    { "settings.modifiedItemIndicator", p.amber },
+    { "welcomePage.tileBackground", p.bg_alt },
+    { "welcomePage.tileBorder", p.border },
+    { "walkThrough.embeddedEditorBackground", p.bg_dark },
+  }
+end
+
+--- ANSI 0-15 as VS Code terminal keys, in the engine's order.
+local vscode_ansi_keys = {
+  "terminal.ansiBlack", "terminal.ansiRed", "terminal.ansiGreen", "terminal.ansiYellow",
+  "terminal.ansiBlue", "terminal.ansiMagenta", "terminal.ansiCyan", "terminal.ansiWhite",
+  "terminal.ansiBrightBlack", "terminal.ansiBrightRed", "terminal.ansiBrightGreen",
+  "terminal.ansiBrightYellow", "terminal.ansiBrightBlue", "terminal.ansiBrightMagenta",
+  "terminal.ansiBrightCyan", "terminal.ansiBrightWhite",
+}
+
+--- Semantic tokens first: when an LSP is running these win, and they are the
+--- assignments the Neovim side makes. The TextMate list below is the fallback.
+local function vscode_semantic(p)
+  return {
+    { "namespace", p.cold }, { "class", p.cold }, { "struct", p.cold },
+    { "interface", p.cold }, { "enum", p.cold }, { "type", p.cold },
+    { "typeParameter", p.cold }, { "enumMember", p.flare },
+    { "function", p.amber }, { "method", p.amber },
+    { "macro", p.purple }, { "decorator", p.purple }, { "modifier", p.purple },
+    { "variable", p.fg }, { "parameter", p.muted },
+    { "property", p.violet }, { "event", p.violet },
+    { "keyword", p.magenta }, { "selfKeyword", p.magenta }, { "label", p.magenta },
+    { "operator", p.flare }, { "number", p.flare },
+    { "string", p.frost }, { "regexp", p.glow }, { "comment", p.dim },
+  }
+end
+
+--- TextMate scopes. Order matters: later entries win, so the broad strokes come
+--- first and the exceptions follow.
+local function vscode_tokens(p)
+  return {
+    { "Body text", { "source", "text" }, p.fg },
+    { "Comments", { "comment", "punctuation.definition.comment" }, p.dim, "italic" },
+    { "Variables", {
+      "variable", "variable.other", "variable.other.readwrite", "support.variable",
+      "meta.definition.variable.name", "entity.name.variable",
+    }, p.fg },
+    { "Parameters", { "variable.parameter", "meta.parameter" }, p.muted, "italic" },
+    { "Members and properties", {
+      "variable.other.property", "variable.other.object.property",
+      "support.variable.property", "meta.object-literal.key",
+      "entity.name.variable.field", "variable.object.property",
+    }, p.violet },
+    { "Punctuation", {
+      "punctuation", "punctuation.separator", "punctuation.terminator",
+      "punctuation.accessor", "meta.brace", "punctuation.section",
+    }, p.muted },
+    { "Keywords and control flow", {
+      "keyword", "keyword.control", "keyword.other", "keyword.control.flow",
+      "keyword.control.conditional", "keyword.control.loop",
+    }, p.magenta },
+    { "Language variables (this, self, super)", {
+      "variable.language", "variable.language.this", "keyword.other.this",
+    }, p.magenta, "italic" },
+    { "Imports, modifiers, macros", {
+      "storage", "storage.type", "storage.modifier", "keyword.control.import",
+      "keyword.control.export", "keyword.control.from", "keyword.control.at-rule",
+      "support.function.macro", "entity.name.function.macro",
+    }, p.purple },
+    { "Decorators and attributes", {
+      "meta.decorator", "entity.name.function.decorator", "meta.attribute",
+      "punctuation.decorator",
+    }, p.purple },
+    { "Operators", { "keyword.operator", "storage.type.function.arrow" }, p.flare },
+    { "Numbers and constants", {
+      "constant.numeric", "constant.language", "constant.other", "support.constant",
+      "constant.language.boolean", "constant.language.null", "variable.other.constant",
+    }, p.flare },
+    { "Strings", {
+      "string", "string.quoted", "punctuation.definition.string",
+      "string.template", "string.unquoted",
+    }, p.frost },
+    { "String interpolation punctuation", {
+      "punctuation.definition.template-expression",
+      "punctuation.section.embedded",
+    }, p.magenta },
+    { "Regular expressions", {
+      "string.regexp", "string.regexp punctuation.definition.string",
+      "constant.other.character-class.regexp",
+    }, p.glow },
+    { "Escapes", {
+      "constant.character.escape", "constant.character",
+      "string.regexp constant.character.escape",
+    }, p.ember },
+    { "Functions", {
+      "entity.name.function", "support.function", "meta.function-call",
+      "meta.function-call.generic", "variable.function", "entity.name.method",
+    }, p.amber },
+    { "Types and classes", {
+      "entity.name.type", "entity.name.class", "entity.other.inherited-class",
+      "support.type", "support.class", "entity.name.type.class",
+      "meta.type.annotation", "entity.name.type.interface",
+    }, p.cold },
+    { "Namespaces and modules", {
+      "entity.name.namespace", "entity.name.module", "entity.name.scope-resolution",
+      "support.module", "support.other.namespace",
+    }, p.cold },
+    { "Tags", { "entity.name.tag", "meta.tag" }, p.magenta },
+    { "Tag attributes", {
+      "entity.other.attribute-name", "entity.other.attribute-name.class",
+      "entity.other.attribute-name.id",
+    }, p.violet },
+    { "CSS properties", { "support.type.property-name", "meta.property-name" }, p.violet },
+    { "JSON and YAML keys", {
+      "support.type.property-name.json", "entity.name.tag.yaml",
+      "support.type.property-name.toml",
+    }, p.violet },
+    { "Preprocessor and meta", { "meta.preprocessor", "keyword.control.directive" }, p.purple },
+    { "Invalid", { "invalid", "invalid.illegal" }, p.ember },
+    { "Deprecated", { "invalid.deprecated" }, p.muted, "strikethrough" },
+    { "Markup headings", { "markup.heading", "entity.name.section" }, p.amber, "bold" },
+    { "Markup bold", { "markup.bold" }, p.fg_hi, "bold" },
+    { "Markup italic", { "markup.italic" }, p.fg, "italic" },
+    { "Markup links", { "markup.underline.link", "string.other.link" }, p.cold, "underline" },
+    { "Markup quotes", { "markup.quote" }, p.frost, "italic" },
+    { "Markup code", { "markup.inline.raw", "markup.raw", "markup.fenced_code" }, p.glow },
+    { "Markup lists", { "punctuation.definition.list.begin", "markup.list" }, p.magenta },
+    { "Diff added", { "markup.inserted", "meta.diff.header.to-file" }, p.frost },
+    { "Diff removed", { "markup.deleted", "meta.diff.header.from-file" }, p.ember },
+    { "Diff changed", { "markup.changed", "meta.diff.range" }, p.amber },
+  }
+end
+
+for _, name in ipairs(palette.order) do
+  local p = palette.flavours[name]
+
+  local colors = {}
+  for _, kv in ipairs(vscode_colors(p)) do
+    table.insert(colors, { kv[1], jstr(kv[2]) })
+  end
+  for i, hex in ipairs(adapter.ansi(p)) do
+    table.insert(colors, { vscode_ansi_keys[i], jstr(hex) })
+  end
+
+  local semantic = {}
+  for _, kv in ipairs(vscode_semantic(p)) do
+    table.insert(semantic, { kv[1], jstr(kv[2]) })
+  end
+
+  local tokens = {}
+  for _, t in ipairs(vscode_tokens(p)) do
+    local scopes = {}
+    for _, s in ipairs(t[2]) do table.insert(scopes, "\n        " .. jstr(s)) end
+    local settings = { { "foreground", jstr(t[3]) } }
+    if t[4] then table.insert(settings, { "fontStyle", jstr(t[4]) }) end
+    table.insert(tokens, table.concat({
+      "    " .. jobj({
+        { "name", jstr(t[1]) },
+        { "scope", "[" .. table.concat(scopes, ",") .. "\n      ]" },
+        { "settings", jobj(settings, 8) },
+      }, 6),
+    }))
+  end
+
+  local label = ("Thermal (%s)"):format(name)
+  write(("vscode/themes/thermal-%s-color-theme.json"):format(name), table.concat({
+    jobj({
+      { "name", jstr(label) },
+      { "type", jstr("dark") },
+      { "semanticHighlighting", "true" },
+      { "colors", jobj(colors, 4) },
+      { "semanticTokenColors", jobj(semantic, 4) },
+      { "tokenColors", "[\n" .. table.concat(tokens, ",\n") .. "\n  ]" },
+    }, 2),
+    "",
+  }, "\n"))
+end
+
+do
+  local contributions = {}
+  for _, name in ipairs(palette.order) do
+    table.insert(contributions, "      " .. jobj({
+      { "label", jstr(("Thermal (%s)"):format(name)) },
+      { "uiTheme", jstr("vs-dark") },
+      { "path", jstr(("./themes/thermal-%s-color-theme.json"):format(name)) },
+    }, 8))
+  end
+  write("vscode/package.json", jobj({
+    { "name", jstr("thermal") },
+    { "displayName", jstr("Thermal") },
+    { "description", jstr("A dark, low-contrast theme based on the PBTfans Thermal keycap set.") },
+    { "version", jstr("1.0.0") },
+    { "publisher", jstr("vojoup") },
+    { "license", jstr("MIT") },
+    { "repository", jstr("https://github.com/vojoup/thermal") },
+    { "engines", jobj({ { "vscode", jstr("^1.70.0") } }, 4) },
+    { "categories", '[\n    "Themes"\n  ]' },
+    { "contributes", jobj({
+      { "themes", "[\n" .. table.concat(contributions, ",\n") .. "\n    ]" },
+    }, 4) },
+  }, 2) .. "\n")
+end
+
+write("vscode/README.md", table.concat({
+  "# thermal — VS Code",
+  "",
+  "<!-- GENERATED by scripts/build.lua -- do not edit -->",
+  "",
+  "One extension carrying every flavour: " .. table.concat(
+    vim.tbl_map(function(n) return "**" .. n .. "**" end, palette.order), ", ") .. ".",
+  "",
+  "Semantic tokens are on, so when a language server is running its",
+  "classifications win and the TextMate scopes are the fallback. Both lists make",
+  "the same assignments the Neovim theme does: magenta is keywords, amber is",
+  "functions, frost is strings, flare is numbers and operators, cold is types,",
+  "violet is members, purple is imports and modifiers.",
+  "",
+  "The integrated terminal gets all sixteen ANSI slots from the same",
+  "`engine.ansi()` the Ghostty theme is built from, so a shell inside VS Code",
+  "matches a shell outside it.",
+  "",
+  "## Install",
+  "",
+  "```",
+  "nvim -l scripts/install.lua      # or: make install",
+  "```",
+  "",
+  "That symlinks `vscode/` to `~/.vscode/extensions/thermal`, so a palette edit",
+  "plus `make build` updates the editor after a window reload. By hand:",
+  "",
+  "```",
+  "ln -s \"$PWD/vscode\" ~/.vscode/extensions/thermal",
+  "```",
+  "",
+  "For VS Code Insiders use `~/.vscode-insiders/extensions`; for Cursor,",
+  "`~/.cursor/extensions`; for VSCodium, `~/.vscode-oss/extensions`.",
+  "",
+  "Then reload the window and pick the theme:",
+  "",
+  "```",
+  ("Cmd+K Cmd+T  ->  Thermal (%s)"):format(palette.default),
+  "```",
+  "",
+  "Or in `settings.json`:",
+  "",
+  "```json",
+  ('{ "workbench.colorTheme": "Thermal (%s)" }'):format(palette.default),
+  "```",
+  "",
+  "## Package a `.vsix` (optional)",
+  "",
+  "```",
+  "npx @vscode/vsce package",
+  "```",
+  "",
+  "That is the only step in this repo that wants node, and it is optional --",
+  "the symlink install needs nothing.",
+  "",
+}, "\n"))
+
+----------------------------------------------------------- claude code ------
+-- Custom themes live in ~/.claude/themes/<slug>.json and are
+-- { name, base, overrides }. The base is one of Claude Code's built-ins;
+-- overrides recolour its named UI roles.
+--
+-- THE BASE MATTERS MORE THAN THE OVERRIDES. Claude Code's code blocks and
+-- colourised diffs do not read the override map for syntax at all: on a `dark`
+-- base they are hardcoded Monokai, on `light` hardcoded GitHub, and ONLY on an
+-- `*-ansi` base does every syntax scope resolve through the terminal's ANSI
+-- slots. So the base is `dark-ansi`, and snippets and diff bodies then land on
+-- thermal by way of the ghostty palette -- one theme, painted twice.
+--
+-- What the ansi base costs: those scopes are pinned to ANSI slots, not to our
+-- role assignments, so a few land one seat over from the editor (strings take
+-- the sage in slot 10 rather than frost; types take slot 14's teal rather than
+-- cold). Every colour is still out of this palette, which the alternative --
+-- Monokai in the middle of a thermal terminal -- is not.
+--
+-- Diff BACKGROUNDS are override-driven and survive the ansi base, so those are
+-- set here from frost and ember, washed over each flavour's own smoke.
+for _, name in ipairs(palette.order) do
+  local p = palette.flavours[name]
+
+  -- Key -> palette hex. Every key must exist in the base palette or Claude Code
+  -- drops it silently; this is the full `dark-ansi` surface.
+  local overrides = {
+    -- text and chrome
+    { "text", p.fg },
+    { "inverseText", p.bg },
+    { "inactive", p.muted },
+    { "inactiveShimmer", p.fg },
+    { "subtle", p.gutter },
+    { "promptBorder", p.border },
+    { "promptBorderShimmer", p.muted },
+    { "selectionBg", p.bg_sel },
+
+    -- message and panel surfaces
+    { "userMessageBackground", p.bg_alt },
+    { "userMessageBackgroundHover", p.bg_hl },
+    { "composerSidebarBackground", p.bg_alt },
+    { "bashMessageBackgroundColor", p.bg_hl },
+    { "memoryBackgroundColor", p.bg_hl },
+
+    -- diffs: teal in, ember out, washed onto this flavour's smoke.
+    -- Dimmed is the collapsed/context wash; Word is the intra-line hit.
+    { "diffAdded", blend(p.frost, p.bg, 0.20) },
+    { "diffAddedDimmed", blend(p.frost, p.bg, 0.10) },
+    { "diffAddedWord", blend(p.frost, p.bg, 0.38) },
+    { "diffRemoved", blend(p.ember, p.bg, 0.20) },
+    { "diffRemovedDimmed", blend(p.ember, p.bg, 0.10) },
+    { "diffRemovedWord", blend(p.ember, p.bg, 0.38) },
+
+    -- status
+    { "success", p.frost },
+    { "error", p.ember },
+    { "warning", p.amber },
+    { "warningShimmer", p.glow },
+    { "background", p.frost },
+
+    -- modes and affordances
+    { "claude", p.flare },
+    { "claudeShimmer", p.amber },
+    { "claudeBlue_FOR_SYSTEM_SPINNER", p.cold },
+    { "claudeBlueShimmer_FOR_SYSTEM_SPINNER", p.cold_hi },
+    { "permission", p.violet },
+    { "permissionShimmer", p.purple },
+    { "planMode", p.frost },
+    { "autoAccept", p.purple },
+    { "autoAcceptShimmer", p.violet },
+    { "skill", p.purple },
+    { "merged", p.purple },
+    { "effortUltra", p.purple },
+    { "fastMode", p.flare },
+    { "fastModeShimmer", p.amber },
+    { "bashBorder", p.magenta },
+    { "ide", p.cold },
+    { "suggestion", p.violet },
+    { "remember", p.violet },
+    { "rate_limit_fill", p.amber },
+    { "rate_limit_empty", p.bg_sel },
+    { "briefLabelYou", p.cold },
+    { "briefLabelClaude", p.flare },
+    { "professionalBlue", p.cold },
+    { "chromeYellow", p.amber },
+    { "clawd_body", p.flare },
+    { "clawd_background", p.bg },
+
+    -- subagent labels: the ramp, kept distinguishable
+    { "red_FOR_SUBAGENTS_ONLY", p.ember },
+    { "blue_FOR_SUBAGENTS_ONLY", p.cold },
+    { "green_FOR_SUBAGENTS_ONLY", p.sage },
+    { "yellow_FOR_SUBAGENTS_ONLY", p.amber },
+    { "purple_FOR_SUBAGENTS_ONLY", p.purple },
+    { "orange_FOR_SUBAGENTS_ONLY", p.flare },
+    { "pink_FOR_SUBAGENTS_ONLY", p.magenta },
+    { "cyan_FOR_SUBAGENTS_ONLY", p.frost },
+
+    -- the rainbow IS the heat ramp, coldest to hottest
+    { "rainbow_red", p.ember },
+    { "rainbow_orange", p.flare },
+    { "rainbow_yellow", p.amber },
+    { "rainbow_green", p.frost },
+    { "rainbow_blue", p.cold },
+    { "rainbow_indigo", p.violet },
+    { "rainbow_violet", p.purple },
+    { "rainbow_red_shimmer", p.ember_hi },
+    { "rainbow_orange_shimmer", p.amber },
+    { "rainbow_yellow_shimmer", p.glow },
+    { "rainbow_green_shimmer", p.frost_hi },
+    { "rainbow_blue_shimmer", p.cold_hi },
+    { "rainbow_indigo_shimmer", p.violet },
+    { "rainbow_violet_shimmer", p.magenta_hi },
+  }
+
+  local members = {}
+  for _, kv in ipairs(overrides) do
+    table.insert(members, { kv[1], jstr(kv[2]) })
+  end
+
+  write(("claude-code/thermal-%s.json"):format(name), jobj({
+    { "name", jstr(("Thermal (%s)"):format(name)) },
+    -- dark-ansi, NOT dark: see the comment above. This is what routes code
+    -- blocks and diff syntax through the terminal's thermal palette.
+    { "base", jstr("dark-ansi") },
+    { "overrides", jobj(members, 4) },
+  }, 2) .. "\n")
+end
+
+write("claude-code/README.md", table.concat({
+  "# thermal — Claude Code",
+  "",
+  "<!-- GENERATED by scripts/build.lua -- do not edit -->",
+  "",
+  "Custom themes for the Claude Code CLI. Available: " .. table.concat(
+    vim.tbl_map(function(n) return "`thermal-" .. n .. "`" end, palette.order), ", ") .. ".",
+  "",
+  "## Install",
+  "",
+  "```",
+  "nvim -l scripts/install.lua      # or: make install",
+  "```",
+  "",
+  "That symlinks every flavour into `~/.claude/themes/`, which Claude Code",
+  "watches -- a palette edit plus `make build` reaches a running session with no",
+  "restart. By hand:",
+  "",
+  "```",
+  ("cp claude-code/thermal-%s.json ~/.claude/themes/"):format(palette.default),
+  "```",
+  "",
+  "Then pick it:",
+  "",
+  "```",
+  "/theme",
+  "```",
+  "",
+  ("The flavours show up as `Thermal (%s)` and friends."):format(palette.default),
+  "",
+  "## Code blocks and diffs",
+  "",
+  "Every flavour sets `\"base\": \"dark-ansi\"`, and that is the load-bearing line.",
+  "",
+  "Claude Code does not read a theme's override map when it highlights code. On a",
+  "`dark` base the syntax colours are hardcoded Monokai and on `light` hardcoded",
+  "GitHub — a theme can repaint the whole UI around them and the snippets stay",
+  "off-palette. Only on an `*-ansi` base does every syntax scope resolve through",
+  "the **terminal's** ANSI slots, which is exactly where thermal already lives:",
+  "",
+  "```",
+  "keyword   -> ANSI 13    string  -> ANSI 10    comment -> ANSI 8",
+  "type      -> ANSI 14    number  -> ANSI 12    function -> ANSI 11",
+  "```",
+  "",
+  "So pair this with the thermal Ghostty theme (`ghostty/README.md`) and the",
+  "snippets Claude prints are painted from the same palette as everything else.",
+  "Without a thermal terminal underneath, they fall back to whatever that",
+  "terminal's ANSI colours are.",
+  "",
+  "The cost of the ansi base: those scopes are pinned to ANSI slots rather than",
+  "to thermal's own role assignments, so a couple land one seat over from the",
+  "editor — strings take slot 10's sage instead of frost, types take slot 14's",
+  "teal instead of cold. Everything is still out of this palette, which Monokai",
+  "in the middle of a thermal terminal is not.",
+  "",
+  "Diff **backgrounds** are override-driven and survive the ansi base, so they're",
+  "set here: teal for additions and ember for deletions, each washed over its own",
+  "flavour's smoke at 20% (10% for context lines, 38% for the intra-line word",
+  "hit). The `+`/`-` markers themselves come from ANSI 10 and 9.",
+  "",
+  "## Schema",
+  "",
+  "```json",
+  "{ \"name\": \"...\", \"base\": \"dark-ansi\", \"overrides\": { \"<role>\": \"#RRGGBB\" } }",
+  "```",
+  "",
+  "The slug is the filename. Overrides whose key isn't a role of the base theme",
+  "are dropped silently, as are values that aren't `#RRGGBB`, `#RGB`,",
+  "`rgb(r,g,b)`, `ansi256(n)` or `ansi:<name>`.",
+  "",
+}, "\n"))
+
 ------------------------------------------------------------------ done ------
 print(("thermal: wrote %d files from lua/thermal/palette.lua"):format(#written))
 for _, r in ipairs(written) do print("  " .. r) end

@@ -1,7 +1,7 @@
 # thermal
 FLAVOUR ?= smoky
 
-.PHONY: build preview check install install-copy slack ghostty tmux chrome wallpaper all
+.PHONY: build preview check install install-copy slack ghostty tmux chrome vscode claude wallpaper all
 
 all: check build preview
 
@@ -17,7 +17,7 @@ wallpaper: ## generate wallpaper/*.png (4K; not committed) from the palette
 check:   ## assert every flavour still clears WCAG AA
 	nvim -l scripts/contrast.lua
 
-install: ## symlink ghostty themes into ~/.config/ghostty/themes
+install: ## symlink ghostty, claude code and vscode themes into place
 	nvim -l scripts/install.lua
 
 install-copy:
@@ -34,3 +34,9 @@ tmux:    ## print the generated tmux plugin
 
 chrome:  ## print a chrome theme manifest: make chrome FLAVOUR=void
 	@cat chrome/thermal-$(FLAVOUR)/manifest.json
+
+vscode:  ## print a vscode colour theme: make vscode FLAVOUR=ash
+	@cat vscode/themes/thermal-$(FLAVOUR)-color-theme.json
+
+claude:  ## print a claude code theme: make claude FLAVOUR=void
+	@cat claude-code/thermal-$(FLAVOUR).json
