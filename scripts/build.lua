@@ -1075,13 +1075,17 @@ for _, name in ipairs(palette.order) do
   -- drops it silently; this is the full `dark-ansi` surface.
   local overrides = {
     -- text and chrome
-    { "text", p.fg },
+    -- The whole grey ladder sits one seat brighter than the editor's. Claude
+    -- Code has no syntax colour to carry a line, so chrome greys that read as
+    -- "recessed" in nvim read as "washed out" here; `border` as promptBorder
+    -- was 1.7:1, and the composer frame is the largest chrome on screen.
+    { "text", p.fg_hi },
     { "inverseText", p.bg },
-    { "inactive", p.muted },
-    { "inactiveShimmer", p.fg },
-    { "subtle", p.gutter },
-    { "promptBorder", p.border },
-    { "promptBorderShimmer", p.muted },
+    { "inactive", p.fg },
+    { "inactiveShimmer", p.fg_hi },
+    { "subtle", p.dim },
+    { "promptBorder", p.muted },
+    { "promptBorderShimmer", p.fg },
     { "selectionBg", p.bg_sel },
 
     -- message and panel surfaces
@@ -1093,16 +1097,20 @@ for _, name in ipairs(palette.order) do
 
     -- diffs: teal in, ember out, washed onto this flavour's smoke.
     -- Dimmed is the collapsed/context wash; Word is the intra-line hit.
-    { "diffAdded", blend(p.frost, p.bg, 0.20) },
-    { "diffAddedDimmed", blend(p.frost, p.bg, 0.10) },
-    { "diffAddedWord", blend(p.frost, p.bg, 0.38) },
-    { "diffRemoved", blend(p.ember, p.bg, 0.20) },
-    { "diffRemovedDimmed", blend(p.ember, p.bg, 0.10) },
-    { "diffRemovedWord", blend(p.ember, p.bg, 0.38) },
+    { "diffAdded", blend(p.frost, p.bg, 0.30) },
+    { "diffAddedDimmed", blend(p.frost, p.bg, 0.15) },
+    { "diffAddedWord", blend(p.frost, p.bg, 0.55) },
+    { "diffRemoved", blend(p.ember, p.bg, 0.30) },
+    { "diffRemovedDimmed", blend(p.ember, p.bg, 0.15) },
+    { "diffRemovedWord", blend(p.ember, p.bg, 0.55) },
 
     -- status
-    { "success", p.frost },
-    { "error", p.ember },
+    -- Status and border accents take the bright ramp, not the base one. The
+    -- base heat is matched to dyed PBT and sits around half the chroma of
+    -- Claude Code's stock dark theme; the `_hi` seats claw some of it back
+    -- without touching the palette every other target is built from.
+    { "success", p.frost_hi },
+    { "error", p.ember_hi },
     { "warning", p.amber },
     { "warningShimmer", p.glow },
     { "background", p.frost },
@@ -1122,8 +1130,8 @@ for _, name in ipairs(palette.order) do
     { "effortUltra", p.purple },
     { "fastMode", p.flare },
     { "fastModeShimmer", p.amber },
-    { "bashBorder", p.magenta },
-    { "ide", p.cold },
+    { "bashBorder", p.magenta_hi },
+    { "ide", p.cold_hi },
     { "suggestion", p.violet },
     { "remember", p.violet },
     { "rate_limit_fill", p.amber },
